@@ -1,9 +1,21 @@
 # ⚡ ZappyBase
 
-**ZappyBase** is a high-performance, super-fast, and ultra-lightweight vector database built from scratch in Rust. It is optimized for edge devices (like Mac M-series) and resource-constrained environments (like 1GB RAM cloud instances).
-
 [![Rust CI](https://github.com/meetsonawane/zapybase/actions/workflows/rust.yml/badge.svg)](https://github.com/meetsonawane/zapybase/actions/workflows/rust.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+
+**The SIMD-powered, ultra-lightweight vector database for the Edge.**
+
+---
+
+## 💡 Why ZappyBase?
+
+Most vector databases are designed for massive cloud clusters. ZappyBase is designed for **efficiency**.
+
+*   **Ultra-Low Footprint**: While production databases like **Qdrant** or **Milvus** often require 500MB+ just to idle, ZappyBase can index **100k vectors using only ~17MB of overhead**.
+*   **Edge Ready**: Optimized specifically for Apple Silicon (NEON) and modern x86_64 (AVX-512).
+*   **Zero Dependencies**: Written in pure Rust. No Python runtime, no Docker containers required.
 
 ---
 
@@ -17,7 +29,24 @@ We validate every build for **Recall** (accuracy) and **Latency**.
 | **SQ8 (Quantized)** | **99.5%** | **0.15 ms** | **3.76x** |
 | **Binary (1-bit)** | 30.0% | 0.22 ms | 32.0x |
 
-*Performance measured on M2 Mac with 2,000 vectors (128-dim). Recent optimizations reduced HNSW latency by ~32% (0.22ms → 0.15ms).*
+*Performance measured on M2 Mac with 2,000 vectors (128-dim). Recent optimizations reduced HNSW latency by ~32%.*
+
+---
+
+## 🏗️ Architecture
+
+ZappyBase uses a hybrid storage engine to balance speed and durability.
+
+```mermaid
+graph TD
+    Client[Client / HTTP] --> API[Axum API Layer]
+    API --> Engine[Core Vector Engine]
+    Engine --> HNSW[HNSW Index (RAM)]
+    Engine --> Storage{Storage Backend}
+    Storage -->|Hot Data| WAL[Write-Ahead Log]
+    Storage -->|Cold Data| Mmap[Mmap Vectors (Disk)]
+    Storage -->|Recovery| Snap[Snapshots]
+```
 
 ---
 
