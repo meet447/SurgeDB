@@ -39,13 +39,13 @@ ZappyBase uses a hybrid storage engine to balance speed and durability.
 
 ```mermaid
 graph TD
-    Client[Client / HTTP] --> API[Axum API Layer]
-    API --> Engine[Core Vector Engine]
-    Engine --> HNSW[HNSW Index (RAM)]
-    Engine --> Storage{Storage Backend}
-    Storage -->|Hot Data| WAL[Write-Ahead Log]
-    Storage -->|Cold Data| Mmap[Mmap Vectors (Disk)]
-    Storage -->|Recovery| Snap[Snapshots]
+    Client["Client / HTTP"] --> API["Axum API Layer"]
+    API --> Engine["Core Vector Engine"]
+    Engine --> HNSW["HNSW Index (RAM)"]
+    Engine --> Storage{"Storage Backend"}
+    Storage -->|Hot Data| WAL["Write-Ahead Log"]
+    Storage -->|Cold Data| Mmap["Mmap Vectors (Disk)"]
+    Storage -->|Recovery| Snap["Snapshots"]
 ```
 
 ---
