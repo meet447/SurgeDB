@@ -1,6 +1,8 @@
 //! ZappyBase CLI - Command-line interface for the vector database
 
 use clap::{Parser, Subcommand, ValueEnum};
+use rayon::prelude::*;
+use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Instant;
 use zapybase_core::{
@@ -84,6 +86,44 @@ enum Commands {
         dimensions: usize,
     },
 
+    /// Import vectors from a JSON file
+    Import {
+        /// Path to JSON file (format: [{"id": "...", "vector": [...]}, ...])
+        #[arg(short, long)]
+        file: PathBuf,
+
+        /// Data directory for storage
+        #[arg(short, long, default_value = "./zapybase_data")]
+        data_dir: PathBuf,
+
+        /// Vector dimensions
+        #[arg(short, long)]
+        dimensions: usize,
+
+        /// Quantization type
+        #[arg(short, long, default_value = "none")]
+        quantization: QuantizationArg,
+    },
+
+    /// Search the imported database
+    Query {
+        /// Data directory
+        #[arg(short, long, default_value = "./zapybase_data")]
+        data_dir: PathBuf,
+
+        /// Vector dimensions
+        #[arg(short, long)]
+        dimensions: usize,
+
+        /// Query vector as comma-separated floats
+        #[arg(short, long)]
+        vec: String,
+
+        /// Top K
+        #[arg(short, long, default_value = "5")]
+        k: usize,
+    },
+
     /// Validate accuracy (Recall) and performance across all modes
     Validate {
         /// Number of vectors to test
@@ -97,6 +137,25 @@ enum Commands {
         /// Top K for recall calculation
         #[arg(short, long, default_value = "10")]
         k: usize,
+    },
+
+    /// Heavy stress test with massive scale and concurrency
+    Stress {
+        /// Number of vectors to insert
+        #[arg(short, long, default_value = "100000")]
+        count: usize,
+
+        /// Vector dimensions
+        #[arg(short, long, default_value = "768")]
+        dimensions: usize,
+
+        /// Number of concurrent search threads
+        #[arg(short, long, default_value = "8")]
+        threads: usize,
+
+        /// Data directory
+        #[arg(long, default_value = "./zapybase_stress")]
+        data_dir: PathBuf,
     },
 
     /// Show version and system information
@@ -138,12 +197,130 @@ fn main() {
             count,
             dimensions,
         } => run_mmap_benchmark(&data_dir, count, dimensions),
+        Commands::Import {
+            file,
+            data_dir,
+            dimensions,
+            quantization,
+        } => run_import(&file, &data_dir, dimensions, quantization),
+        Commands::Query {
+            data_dir,
+            dimensions,
+            vec,
+            k,
+        } => run_query(&data_dir, dimensions, &vec, k),
         Commands::Validate {
             count,
             dimensions,
             k,
         } => run_validation(count, dimensions, k),
+        Commands::Stress {
+            count,
+            dimensions,
+            threads,
+            data_dir,
+        } => run_stress_test(count, dimensions, threads, &data_dir),
         Commands::Info => show_info(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ImportItem {
+    id: String,
+    vector: Vec<f32>,
+}
+
+fn run_import(
+    file: &PathBuf,
+    data_dir: &PathBuf,
+    dimensions: usize,
+    _quantization: QuantizationArg,
+) {
+    println!("ZappyBase Import");
+    println!("===============");
+    println!("File: {}", file.display());
+    println!("Dimensions: {}", dimensions);
+    println!();
+
+    // Read JSON
+    let file_content = std::fs::read_to_string(file).expect("Failed to read import file");
+    let items: Vec<ImportItem> = serde_json::from_str(&file_content).expect("Failed to parse JSON");
+
+    println!("Importing {} vectors...", items.len());
+
+    let config = PersistentConfig {
+        dimensions,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+
+    let mut db = PersistentVectorDb::open(data_dir, config).expect("Failed to create database");
+
+    let start = Instant::now();
+    let mut skip_count = 0;
+    for (i, item) in items.iter().enumerate() {
+        match db.insert(item.id.clone(), &item.vector) {
+            Ok(_) => {}
+            Err(zapybase_core::Error::DuplicateId(_)) => {
+                skip_count += 1;
+            }
+            Err(e) => panic!("Failed to insert: {:?}", e),
+        }
+        if (i + 1) % 100 == 0 {
+            print!(
+                "\r  Progress: {}/{} (skipped: {})",
+                i + 1,
+                items.len(),
+                skip_count
+            );
+            use std::io::Write;
+            std::io::stdout().flush().unwrap();
+        }
+    }
+
+    db.sync().unwrap();
+    println!(
+        "\r  Done! Imported {} vectors (skipped {}) in {:?}",
+        items.len() - skip_count,
+        skip_count,
+        start.elapsed()
+    );
+    println!("Data stored in: {}", data_dir.display());
+}
+
+fn run_query(data_dir: &PathBuf, dimensions: usize, vec_str: &str, k: usize) {
+    let query_vec: Vec<f32> = vec_str
+        .split(',')
+        .map(|s| s.trim().parse().expect("Invalid float in query vector"))
+        .collect();
+
+    if query_vec.len() != dimensions {
+        eprintln!(
+            "Error: Query vector has {} dims, expected {}",
+            query_vec.len(),
+            dimensions
+        );
+        return;
+    }
+
+    let config = PersistentConfig {
+        dimensions,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+
+    let db = PersistentVectorDb::open(data_dir, config).expect("Failed to open database");
+
+    println!("Searching for top {} neighbors...", k);
+    let start = Instant::now();
+    let results = db.search(&query_vec, k).expect("Search failed");
+    let duration = start.elapsed();
+
+    println!("\rFound {} results in {:?}", results.len(), duration);
+    println!("{:<20} {:>10}", "ID", "Distance");
+    println!("{}", "-".repeat(32));
+    for (id, dist) in results {
+        println!("{:<20} {:>10.4}", id, dist);
     }
 }
 
@@ -673,7 +850,7 @@ fn run_comparison(count: usize, dimensions: usize) {
 
     println!();
     println!("Note: Binary quantization trades accuracy for 32x compression.");
-    println!("      SQ8 is recommended for most use cases (4x compression, <5% recall loss).");
+    println!("      SQ8 is recommended for most use cases (4x compression, <5% recall loss)..");
 }
 
 fn show_info() {
@@ -714,6 +891,9 @@ fn show_info() {
     println!("  zapybase persist                   Test persistence & recovery");
     println!("  zapybase mmap                      Benchmark mmap storage");
     println!("  zapybase validate                  Check Recall & Quality");
+    println!("  zapybase import                    Import vectors from JSON");
+    println!("  zapybase query                     Search imported database");
+    println!("  zapybase stress                    Heavy Stress Test (100k+ vectors)");
 }
 
 fn run_validation(count: usize, dimensions: usize, k: usize) {
@@ -837,6 +1017,116 @@ fn run_validation(count: usize, dimensions: usize, k: usize) {
     println!();
     println!("Note: Recall@K compares the top results against an exact search.");
     println!("      Higher is better (100% is perfect match).");
+}
+
+fn run_stress_test(count: usize, dimensions: usize, threads: usize, data_dir: &PathBuf) {
+    println!("ZappyBase Industrial Stress Test");
+    println!("===============================");
+    println!("Scale: {} vectors", count);
+    println!("Dimensions: {}", dimensions);
+    println!("Concurrency: {} search threads", threads);
+    println!("Data Dir: {}", data_dir.display());
+    println!();
+
+    if data_dir.exists() {
+        std::fs::remove_dir_all(data_dir).ok();
+    }
+
+    // 1. Ingestion Stress
+    println!("Phase 1: High-Speed Ingestion...");
+    let config = PersistentConfig {
+        dimensions,
+        ..Default::default()
+    };
+    let mut db = PersistentVectorDb::open(data_dir, config).unwrap();
+
+    let start = Instant::now();
+    for i in 0..count {
+        let vec: Vec<f32> = (0..dimensions).map(|_| rand::random::<f32>()).collect();
+        db.insert(format!("v{}", i), &vec).unwrap();
+        if (i + 1) % 5000 == 0 {
+            print!("\r  Ingested: {}/{}", i + 1, count);
+            use std::io::Write;
+            std::io::stdout().flush().unwrap();
+        }
+    }
+    let ingest_time = start.elapsed();
+    println!("\r  Ingested: {} vectors in {:?}", count, ingest_time);
+    println!(
+        "  Throughput: {:.0} vectors/sec",
+        count as f64 / ingest_time.as_secs_f64()
+    );
+    println!();
+
+    // 2. Memory Footprint
+    let disk_size = dir_size(data_dir).unwrap_or(0);
+    println!("Phase 2: Resource Usage");
+    println!("  Disk Usage: {:.2} MB", disk_size as f64 / 1_000_000.0);
+    println!();
+
+    // 3. Concurrency Stress
+    println!(
+        "Phase 3: Parallel Search Stress (Simulating {} users)...",
+        threads
+    );
+    let query_count = 1000;
+    let queries: Vec<Vec<f32>> = (0..query_count)
+        .map(|_| (0..dimensions).map(|_| rand::random::<f32>()).collect())
+        .collect();
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .unwrap();
+
+    let start = Instant::now();
+    let latencies: Vec<f64> = pool.install(|| {
+        queries
+            .par_iter()
+            .map(|q| {
+                let q_start = Instant::now();
+                db.search(q, 10).unwrap();
+                q_start.elapsed().as_secs_f64() * 1000.0
+            })
+            .collect()
+    });
+    let total_time = start.elapsed();
+
+    // Calculate Percentiles
+    let mut latencies = latencies;
+    latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p50 = latencies[latencies.len() / 2];
+    let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
+    let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
+
+    println!("  Total Queries: {}", query_count);
+    println!("  Total Time: {:?}", total_time);
+    println!(
+        "  Throughput: {:.0} queries/sec",
+        query_count as f64 / total_time.as_secs_f64()
+    );
+    println!("  Latency Percentiles:");
+    println!("    p50: {:.2} ms", p50);
+    println!("    p95: {:.2} ms", p95);
+    println!("    p99: {:.2} ms", p99);
+    println!();
+
+    // 4. Recovery Stress
+    println!("Phase 4: Cold Start Recovery...");
+    drop(db); // Close DB
+    let start = Instant::now();
+    let db = PersistentVectorDb::open(
+        data_dir,
+        PersistentConfig {
+            dimensions,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    println!("  Recovered {} vectors in {:?}", db.len(), start.elapsed());
+    println!();
+
+    println!("Stress test complete!");
 }
 
 fn measure_db_performance(

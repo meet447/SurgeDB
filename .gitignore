@@ -4,10 +4,15 @@ target/
 # Remove log files
 *.log
 
-# Data directories created by ZappyBase
+# Data directories and files
 zapybase_data/
 zapybase_mmap/
+*.dat
+*.snap
+*.wal
 
 # Backup and temp files
 *.rs.bk
 .DS_Store
+
+dataset

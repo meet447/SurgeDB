@@ -75,17 +75,16 @@ impl HnswConfig {
 }
 
 /// A node in the HNSW graph
-#[derive(Debug, Clone)]
-struct HnswNode {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HnswNode {
     /// The internal ID of this node (for debugging/serialization)
-    #[allow(dead_code)]
-    id: InternalId,
+    pub(crate) id: InternalId,
 
     /// Maximum layer this node exists on
-    max_layer: usize,
+    pub(crate) max_layer: usize,
 
     /// Neighbors at each layer (layer -> list of neighbors)
-    neighbors: Vec<Vec<InternalId>>,
+    pub(crate) neighbors: Vec<Vec<InternalId>>,
 }
 
 impl HnswNode {
@@ -156,6 +155,14 @@ impl Ord for MaxCandidate {
             .partial_cmp(&other.distance)
             .unwrap_or(Ordering::Equal)
     }
+}
+
+/// State of the HNSW index for serialization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HnswState {
+    pub nodes: Vec<HnswNode>,
+    pub entry_point: Option<InternalId>,
+    pub max_layer: usize,
 }
 
 /// The HNSW index
@@ -475,6 +482,30 @@ impl HnswIndex {
     /// Check if index is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Get the current state of the index for serialization
+    pub fn get_state(&self) -> HnswState {
+        let nodes = self.nodes.read();
+        let entry_point = self.entry_point.read();
+        let max_layer = self.max_layer.read();
+
+        HnswState {
+            nodes: nodes.clone(),
+            entry_point: *entry_point,
+            max_layer: *max_layer,
+        }
+    }
+
+    /// Load the index state from serialized data
+    pub fn load_state(&self, state: HnswState) {
+        let mut self_nodes = self.nodes.write();
+        let mut self_entry_point = self.entry_point.write();
+        let mut self_max_layer = self.max_layer.write();
+
+        *self_nodes = state.nodes;
+        *self_entry_point = state.entry_point;
+        *self_max_layer = state.max_layer;
     }
 }
 

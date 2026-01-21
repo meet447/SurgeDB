@@ -59,10 +59,35 @@ impl MmapVectorDb {
             data_dir,
         };
 
-        // Rebuild index from storage
-        db.rebuild_index()?;
+        // Try to load index from disk, otherwise rebuild
+        if let Err(_) = db.load_index() {
+            db.rebuild_index()?;
+            db.save_index()?;
+        }
 
         Ok(db)
+    }
+
+    /// Load HNSW index state from disk
+    fn load_index(&self) -> Result<()> {
+        let path = self.data_dir.join("index.state");
+        if !path.exists() {
+            return Err(Error::Storage("Index state not found".into()));
+        }
+
+        let data = std::fs::read(path)?;
+        let state = bincode::deserialize(&data).map_err(|e| Error::Storage(e.to_string()))?;
+        self.index.load_state(state);
+        Ok(())
+    }
+
+    /// Save HNSW index state to disk
+    pub fn save_index(&self) -> Result<()> {
+        let path = self.data_dir.join("index.state");
+        let state = self.index.get_state();
+        let data = bincode::serialize(&state).map_err(|e| Error::Storage(e.to_string()))?;
+        std::fs::write(path, data)?;
+        Ok(())
     }
 
     /// Rebuild HNSW index from storage
@@ -145,7 +170,9 @@ impl MmapVectorDb {
 
     /// Sync data to disk
     pub fn sync(&self) -> Result<()> {
-        self.storage.sync()
+        self.storage.sync()?;
+        self.save_index()?;
+        Ok(())
     }
 }
 

@@ -4,6 +4,7 @@
 //! Combined with WAL, they enable fast recovery without replaying the entire history.
 
 use crate::error::{Error, Result};
+use crate::hnsw::HnswState;
 use crate::types::VectorId;
 use bincode::{deserialize_from, serialize_into};
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use std::path::{Path, PathBuf};
 const SNAPSHOT_MAGIC: &[u8; 4] = b"ZSNP";
 
 /// Snapshot format version
-const SNAPSHOT_VERSION: u8 = 1;
+const SNAPSHOT_VERSION: u8 = 2;
 
 /// Stored vector data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +36,8 @@ pub struct Snapshot {
     pub dimensions: usize,
     /// All vectors
     pub vectors: Vec<StoredVector>,
+    /// HNSW index state
+    pub hnsw_state: Option<HnswState>,
 }
 
 impl Snapshot {
@@ -45,12 +48,18 @@ impl Snapshot {
             wal_seq,
             dimensions,
             vectors: Vec::new(),
+            hnsw_state: None,
         }
     }
 
     /// Add a vector to the snapshot
     pub fn add_vector(&mut self, id: VectorId, vector: Vec<f32>) {
         self.vectors.push(StoredVector { id, vector });
+    }
+
+    /// Set the index state
+    pub fn set_hnsw_state(&mut self, state: HnswState) {
+        self.hnsw_state = Some(state);
     }
 
     /// Get the number of vectors
@@ -119,6 +128,10 @@ impl SnapshotManager {
 
         serialize_into(&mut writer, &header).map_err(|e| Error::Storage(e.to_string()))?;
 
+        // Write HNSW state
+        serialize_into(&mut writer, &snapshot.hnsw_state)
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
         // Write vectors in batches for efficiency
         const BATCH_SIZE: usize = 1000;
         for chunk in snapshot.vectors.chunks(BATCH_SIZE) {
@@ -164,6 +177,10 @@ impl SnapshotManager {
             )));
         }
 
+        // Read HNSW state
+        let hnsw_state: Option<HnswState> =
+            deserialize_from(&mut reader).map_err(|e| Error::Storage(e.to_string()))?;
+
         // Read vectors
         let mut vectors = Vec::with_capacity(header.vector_count);
         let mut remaining = header.vector_count;
@@ -180,6 +197,7 @@ impl SnapshotManager {
             wal_seq: header.wal_seq,
             dimensions: header.dimensions,
             vectors,
+            hnsw_state,
         })
     }
 

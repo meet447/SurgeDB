@@ -103,9 +103,19 @@ impl PersistentVectorDb {
 
             // Restore vectors from snapshot
             for stored in snapshot.vectors {
-                let internal_id = self.storage.insert(stored.id, &stored.vector)?;
-                self.index
-                    .insert(internal_id, &stored.vector, &self.storage)?;
+                self.storage.insert(stored.id, &stored.vector)?;
+            }
+
+            // Restore HNSW state if available
+            if let Some(state) = snapshot.hnsw_state {
+                self.index.load_state(state);
+            } else {
+                // Fallback: rebuild index if state is missing
+                for internal_id in self.storage.all_internal_ids() {
+                    if let Some(vector) = self.storage.get_vector_data(internal_id) {
+                        self.index.insert(internal_id, &vector, &self.storage)?;
+                    }
+                }
             }
         }
 
@@ -209,6 +219,9 @@ impl PersistentVectorDb {
                 }
             }
         }
+
+        // Add index state to snapshot
+        snapshot.set_hnsw_state(self.index.get_state());
 
         // Save snapshot
         self.snapshot_manager.save(&snapshot)?;

@@ -37,7 +37,7 @@ Add ZappyBase to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zapybase-core = { git = "https://github.com/meetsonawane/zapybase" }
+zapybase-core = { git = "https://github.com/meet447/zapybase" }
 ```
 
 ---
