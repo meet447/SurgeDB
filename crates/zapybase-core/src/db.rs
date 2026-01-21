@@ -3,9 +3,25 @@ use crate::{
     Config, Error, QuantizationType, QuantizedConfig, QuantizedVectorDb, Result, VectorDb,
 };
 use parking_lot::RwLock;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CollectionStats {
+    pub vector_count: usize,
+    pub memory_usage_bytes: usize,
+    pub quantization: String,
+    pub dimensions: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DatabaseStats {
+    pub collections: HashMap<String, CollectionStats>,
+    pub total_vectors: usize,
+    pub total_memory_bytes: usize,
+}
 
 /// Enum representing either a standard or quantized collection
 pub enum Collection {
@@ -25,6 +41,29 @@ impl Collection {
         match self {
             Collection::Standard(db) => db.read().search(query, k),
             Collection::Quantized(db) => db.read().search(query, k),
+        }
+    }
+
+    pub fn stats(&self) -> CollectionStats {
+        match self {
+            Collection::Standard(db) => {
+                let db = db.read();
+                CollectionStats {
+                    vector_count: db.len(),
+                    memory_usage_bytes: db.memory_usage(),
+                    quantization: "None".to_string(),
+                    dimensions: db.config().dimensions,
+                }
+            }
+            Collection::Quantized(db) => {
+                let db = db.read();
+                CollectionStats {
+                    vector_count: db.len(),
+                    memory_usage_bytes: db.memory_usage(),
+                    quantization: format!("{:?}", db.config().quantization),
+                    dimensions: db.config().dimensions,
+                }
+            }
         }
     }
 }
@@ -105,6 +144,27 @@ impl Database {
     /// List all collection names
     pub fn list_collections(&self) -> Vec<String> {
         self.collections.read().keys().cloned().collect()
+    }
+
+    /// Get statistics for the database
+    pub fn get_stats(&self) -> DatabaseStats {
+        let collections = self.collections.read();
+        let mut stats_map = HashMap::new();
+        let mut total_vectors = 0;
+        let mut total_memory = 0;
+
+        for (name, collection) in collections.iter() {
+            let stats = collection.stats();
+            total_vectors += stats.vector_count;
+            total_memory += stats.memory_usage_bytes;
+            stats_map.insert(name.clone(), stats);
+        }
+
+        DatabaseStats {
+            collections: stats_map,
+            total_vectors,
+            total_memory_bytes: total_memory,
+        }
     }
 }
 

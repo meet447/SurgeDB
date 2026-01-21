@@ -63,7 +63,7 @@ pub mod types;
 pub mod wal;
 
 // Re-exports
-pub use db::Database;
+pub use db::{Database, DatabaseStats};
 pub use distance::DistanceMetric;
 pub use error::{Error, Result};
 pub use hnsw::{HnswConfig, HnswIndex};
@@ -216,6 +216,11 @@ impl VectorDb {
     /// Get configuration
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Get approximate memory usage in bytes
+    pub fn memory_usage(&self) -> usize {
+        self.storage.memory_usage() + self.index.memory_usage()
     }
 }
 

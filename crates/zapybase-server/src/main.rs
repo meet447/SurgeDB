@@ -8,11 +8,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use zapybase_core::{Config, Database, DistanceMetric, QuantizationType};
 
 #[derive(Clone)]
 struct AppState {
     db: Arc<Database>,
+    start_time: Instant,
 }
 
 #[derive(Deserialize)]
@@ -50,6 +52,12 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Serialize)]
+struct StatsResponse {
+    uptime_seconds: u64,
+    database: zapybase_core::DatabaseStats,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -57,10 +65,12 @@ async fn main() {
     let db = Database::new();
     let state = AppState {
         db: Arc::new(db),
+        start_time: Instant::now(),
     };
 
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/stats", get(get_stats))
         .route("/collections", post(create_collection).get(list_collections))
         .route("/collections/:name/vectors", post(insert_vector))
         .route("/collections/:name/search", post(search_vector))
@@ -74,6 +84,15 @@ async fn main() {
 
 async fn health_check() -> &'static str {
     "OK"
+}
+
+async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
+    let stats = state.db.get_stats();
+    let uptime = state.start_time.elapsed().as_secs();
+    Json(StatsResponse {
+        uptime_seconds: uptime,
+        database: stats,
+    })
 }
 
 async fn create_collection(

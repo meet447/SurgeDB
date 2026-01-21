@@ -250,7 +250,7 @@ impl HnswIndex {
             } else {
                 self.config.m
             };
-            let selected = self.select_neighbors(&neighbors, m);
+            let selected = self.select_neighbors(&neighbors, m, storage);
 
             // Connect new node to selected neighbors
             let node_idx = internal_id.as_usize();
@@ -434,9 +434,68 @@ impl HnswIndex {
         Ok(result_vec)
     }
 
-    /// Select best neighbors using simple heuristic
-    fn select_neighbors(&self, candidates: &[Candidate], m: usize) -> Vec<Candidate> {
-        candidates.iter().take(m).cloned().collect()
+    /// Select best neighbors using the heuristic from HNSW paper (Algorithm 4)
+    fn select_neighbors(
+        &self,
+        candidates: &[Candidate],
+        m: usize,
+        storage: &impl VectorStorageTrait,
+    ) -> Vec<Candidate> {
+        if candidates.len() <= m {
+            return candidates.to_vec();
+        }
+
+        let mut result: Vec<Candidate> = Vec::with_capacity(m);
+        let mut discard = Vec::new();
+
+        // Candidates are already sorted by distance to query (closest first)
+        for &candidate in candidates {
+            if result.len() >= m {
+                break;
+            }
+
+            // Check if this candidate is closer to the query than to any already selected neighbor
+            let mut is_closer = true;
+            if let Some(candidate_vec) = storage.get_vector_data(candidate.id) {
+                for &selected in &result {
+                    if let Some(dist) =
+                        storage.distance(selected.id, &candidate_vec, self.distance_metric)
+                    {
+                        if dist < candidate.distance {
+                            is_closer = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if is_closer {
+                result.push(candidate);
+            } else {
+                discard.push(candidate);
+            }
+        }
+
+        // Fill remaining spots from discard pile if needed (to ensure connectivity)
+        // This is optional but recommended to maintain M connections
+        /*
+        while result.len() < m && !discard.is_empty() {
+            result.push(discard.remove(0));
+        }
+        */
+
+        // If we filtered too aggressively and have fewer than M (but we started with > M),
+        // fill up with the best discarded ones.
+        if result.len() < m {
+            for &candidate in &discard {
+                if result.len() >= m {
+                    break;
+                }
+                result.push(candidate);
+            }
+        }
+
+        result
     }
 
     /// Search for k nearest neighbors
@@ -505,6 +564,18 @@ impl HnswIndex {
         *self_nodes = state.nodes;
         *self_entry_point = state.entry_point;
         *self_max_layer = state.max_layer;
+    }
+
+    /// Get approximate memory usage in bytes
+    pub fn memory_usage(&self) -> usize {
+        let nodes = self.nodes.read();
+        let mut size = nodes.capacity() * std::mem::size_of::<HnswNode>();
+        for node in nodes.iter() {
+            for layer in &node.neighbors {
+                size += layer.capacity() * std::mem::size_of::<InternalId>();
+            }
+        }
+        size
     }
 }
 

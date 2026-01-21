@@ -152,6 +152,20 @@ impl VectorStorage {
     pub fn dimensions(&self) -> usize {
         self.dimensions
     }
+
+    /// Get approximate memory usage in bytes
+    pub fn memory_usage(&self) -> usize {
+        let vectors_size = self.vectors.read().capacity() * 4;
+        // Approximation for maps:
+        // id_to_internal: capacity * (size_of<String> + heap_overhead + size_of<InternalId> + map_overhead)
+        // internal_to_id: capacity * (size_of<String> + heap_overhead)
+        // Assuming avg string len 16 + overhead
+        let count = self.len();
+        let map_overhead = count * (64 + 4);
+        let rev_map_overhead = count * 64;
+
+        vectors_size + map_overhead + rev_map_overhead
+    }
 }
 
 /// Implement the trait for VectorStorage
