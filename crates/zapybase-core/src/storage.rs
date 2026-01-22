@@ -62,6 +62,28 @@ impl VectorStorage {
         vector: &[f32],
         metadata: Option<Value>,
     ) -> Result<InternalId> {
+        self.insert_internal(id, vector, metadata, false)
+    }
+
+    /// Insert or update a vector (upsert)
+    /// If the ID exists, it creates a new internal record and updates the mapping.
+    /// The old internal record becomes inaccessible via ID lookup (stale).
+    pub fn upsert(
+        &self,
+        id: VectorId,
+        vector: &[f32],
+        metadata: Option<Value>,
+    ) -> Result<InternalId> {
+        self.insert_internal(id, vector, metadata, true)
+    }
+
+    fn insert_internal(
+        &self,
+        id: VectorId,
+        vector: &[f32],
+        metadata: Option<Value>,
+        allow_update: bool,
+    ) -> Result<InternalId> {
         if vector.len() != self.dimensions {
             return Err(Error::DimensionMismatch {
                 expected: self.dimensions,
@@ -70,7 +92,7 @@ impl VectorStorage {
         }
 
         let mut id_to_internal = self.id_to_internal.write();
-        if id_to_internal.contains_key(&id) {
+        if !allow_update && id_to_internal.contains_key(&id) {
             return Err(Error::DuplicateId(id.to_string()));
         }
 

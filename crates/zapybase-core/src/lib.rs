@@ -178,6 +178,61 @@ impl VectorDb {
         Ok(())
     }
 
+    /// Insert or update a vector with the given ID and optional metadata
+    pub fn upsert(
+        &mut self,
+        id: impl Into<VectorId>,
+        vector: &[f32],
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        let id = id.into();
+
+        if vector.len() != self.config.dimensions {
+            return Err(Error::DimensionMismatch {
+                expected: self.config.dimensions,
+                got: vector.len(),
+            });
+        }
+
+        let internal_id = self.storage.upsert(id.clone(), vector, metadata)?;
+        self.index.insert(internal_id, vector, &self.storage)?;
+
+        Ok(())
+    }
+
+    /// Retrieve a vector by its external ID
+    pub fn get(&self, id: &str) -> Result<Option<(Vec<f32>, Option<Value>)>> {
+        let id = VectorId::from(id);
+        if let Some(internal_id) = self.storage.get_internal_id(&id) {
+            let vector = self
+                .storage
+                .get(internal_id)
+                .ok_or(Error::VectorNotFound(id.to_string()))?;
+            let metadata = self.storage.get_metadata(internal_id);
+            Ok(Some((vector, metadata)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// List all vector IDs (pagination)
+    pub fn list(&self, offset: usize, limit: usize) -> Vec<VectorId> {
+        let ids = self.storage.all_internal_ids();
+        ids.iter()
+            .skip(offset)
+            .take(limit)
+            .filter_map(|&internal_id| {
+                // Filter stale
+                let ext_id = self.storage.get_external_id(internal_id)?;
+                let current_internal = self.storage.get_internal_id(&ext_id)?;
+                if current_internal != internal_id {
+                    return None;
+                }
+                Some(ext_id)
+            })
+            .collect()
+    }
+
     /// Search for the k nearest neighbors
     pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
         if query.len() != self.config.dimensions {
@@ -187,17 +242,28 @@ impl VectorDb {
             });
         }
 
-        let results = self.index.search(query, k, &self.storage.view())?;
+        // We search for more candidates (2x k) to account for potential stale/deleted entries
+        // that might be filtered out.
+        let search_k = k * 2;
+        let results = self.index.search(query, search_k, &self.storage.view())?;
 
         // Map internal IDs back to external IDs and fetch metadata
+        // Filter out stale entries (where internal_id doesn't match current mapping)
         let mapped: Vec<(VectorId, f32, Option<Value>)> = results
             .into_iter()
             .filter_map(|(internal_id, distance)| {
-                self.storage.get_external_id(internal_id).map(|ext_id| {
-                    let metadata = self.storage.get_metadata(internal_id);
-                    (ext_id, distance, metadata)
-                })
+                let ext_id = self.storage.get_external_id(internal_id)?;
+                let current_internal = self.storage.get_internal_id(&ext_id)?;
+
+                if current_internal != internal_id {
+                    // This is a stale entry (overwritten by upsert)
+                    return None;
+                }
+
+                let metadata = self.storage.get_metadata(internal_id);
+                Some((ext_id, distance, metadata))
             })
+            .take(k)
             .collect();
 
         Ok(mapped)
@@ -243,11 +309,6 @@ impl QuantizedVectorDb {
             config.keep_originals,
         );
 
-        // We only use HNSW if quantization is SQ8 or None.
-        // HNSW + Binary with very low dimensions (like in tests) fails to build a navigable graph
-        // because distance gradients are too coarse.
-        // For production binary (e.g. 1024 dims), HNSW might work, but it's risky without tuning.
-        // Default to Brute Force for Binary for now (which is extremely fast anyway).
         let index = if config.quantization == QuantizationType::Binary {
             None
         } else {
@@ -280,13 +341,67 @@ impl QuantizedVectorDb {
         let internal_id = self.storage.insert(id, vector, metadata)?;
 
         if let Some(index) = &mut self.index {
-            // Add to HNSW index
-            // Note: HNSW insert uses storage.distance(), which we implemented to use Asymmetric distance.
-            // This builds the graph based on quantized distances.
             index.insert(internal_id, vector, &self.storage)?;
         }
 
         Ok(())
+    }
+
+    /// Insert or update a vector with the given ID and optional metadata
+    pub fn upsert(
+        &mut self,
+        id: impl Into<VectorId>,
+        vector: &[f32],
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        let id = id.into();
+
+        if vector.len() != self.config.dimensions {
+            return Err(Error::DimensionMismatch {
+                expected: self.config.dimensions,
+                got: vector.len(),
+            });
+        }
+
+        let internal_id = self.storage.upsert(id, vector, metadata)?;
+
+        if let Some(index) = &mut self.index {
+            index.insert(internal_id, vector, &self.storage)?;
+        }
+
+        Ok(())
+    }
+
+    /// Retrieve a vector by its external ID
+    pub fn get(&self, id: &str) -> Result<Option<(Vec<f32>, Option<Value>)>> {
+        let id = VectorId::from(id);
+        if let Some(internal_id) = self.storage.get_internal_id(&id) {
+            let vector =
+                crate::storage::VectorStorageTrait::get_vector_data(&self.storage, internal_id)
+                    .ok_or(Error::VectorNotFound(id.to_string()))?;
+            let metadata = self.storage.get_metadata(internal_id);
+            Ok(Some((vector, metadata)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// List all vector IDs (pagination)
+    pub fn list(&self, offset: usize, limit: usize) -> Vec<VectorId> {
+        let ids = self.storage.all_internal_ids();
+        ids.iter()
+            .skip(offset)
+            .take(limit)
+            .filter_map(|&internal_id| {
+                // Filter stale
+                let ext_id = self.storage.get_external_id(internal_id)?;
+                let current_internal = self.storage.get_internal_id(&ext_id)?;
+                if current_internal != internal_id {
+                    return None;
+                }
+                Some(ext_id)
+            })
+            .collect()
     }
 
     /// Search for the k nearest neighbors
@@ -304,13 +419,22 @@ impl QuantizedVectorDb {
 
         let metric = self.config.distance_metric;
 
+        // Increase K to account for stale entries and re-ranking
+        let multiplier =
+            if self.config.keep_originals && self.config.quantization != QuantizationType::None {
+                self.config.rerank_multiplier
+            } else {
+                1
+            };
+        // Buffer for stale entries (2x)
+        let search_k = k * multiplier * 2;
+
         // Use HNSW if available
         let results: Vec<(types::InternalId, f32)> = if let Some(index) = &self.index {
             // HNSW Search
-            // We use the storage view which implements VectorStorageTrait
-            index.search(query, k, &self.storage.view())?
+            index.search(query, search_k, &self.storage.view())?
         } else {
-            // Fallback to Brute Force (Legacy logic)
+            // Fallback to Brute Force
             let storage_view = self.storage.view();
             let quantized_query = self.storage.quantize_query(query);
 
@@ -325,30 +449,30 @@ impl QuantizedVectorDb {
                 })
                 .collect();
             candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-            candidates.into_iter().take(k).collect()
+            candidates.into_iter().take(search_k).collect()
         };
 
-        // If re-ranking is enabled, we need to fetch more candidates?
-        // With HNSW, `results` are already the top K from the index.
-        // If we want to re-rank, we should have asked HNSW for more candidates (k * multiplier).
-        // Let's adjust logic.
+        // Filter stale results
+        let valid_candidates: Vec<(types::InternalId, f32)> = results
+            .into_iter()
+            .filter(|(internal_id, _)| {
+                if let Some(ext_id) = self.storage.get_external_id(*internal_id) {
+                    if let Some(current) = self.storage.get_internal_id(&ext_id) {
+                        return current == *internal_id;
+                    }
+                }
+                false
+            })
+            .collect();
 
+        // If re-ranking is enabled
         let final_results: Vec<(types::InternalId, f32)> =
             if self.config.keep_originals && self.config.quantization != QuantizationType::None {
-                // If re-ranking, we probably should have searched for more.
-                // But `index.search` was called with `k`.
-                // Let's re-run search if index is present? No that's wasteful.
-                // We should determine `k_search` before.
+                let k_rerank = k * self.config.rerank_multiplier;
+                let top_candidates: Vec<_> = valid_candidates.into_iter().take(k_rerank).collect();
 
-                let k_search = k * self.config.rerank_multiplier;
-                let candidates = if let Some(index) = &self.index {
-                    index.search(query, k_search, &self.storage.view())?
-                } else {
-                    self.search_impl(query, k)?
-                };
-
-                // Re-rank
-                let mut reranked: Vec<_> = candidates
+                // Re-rank using original vectors
+                let mut reranked: Vec<_> = top_candidates
                     .into_iter()
                     .filter_map(|(id, _)| {
                         self.storage.get_original(id).map(|orig| {
@@ -361,8 +485,7 @@ impl QuantizedVectorDb {
                 reranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
                 reranked.into_iter().take(k).collect()
             } else {
-                // No re-ranking, just return the results
-                results
+                valid_candidates.into_iter().take(k).collect()
             };
 
         // Map to external IDs and fetch metadata
@@ -377,38 +500,6 @@ impl QuantizedVectorDb {
             .collect();
 
         Ok(mapped)
-    }
-
-    // Internal helper for clean search logic
-    fn search_impl(&self, query: &[f32], k: usize) -> Result<Vec<(types::InternalId, f32)>> {
-        let k_target =
-            if self.config.keep_originals && self.config.quantization != QuantizationType::None {
-                k * self.config.rerank_multiplier
-            } else {
-                k
-            };
-
-        if let Some(index) = &self.index {
-            index.search(query, k_target, &self.storage.view())
-        } else {
-            let metric = self.config.distance_metric;
-            let storage_view = self.storage.view();
-            let quantized_query = self.storage.quantize_query(query);
-
-            let mut candidates: Vec<(types::InternalId, f32)> = self
-                .storage
-                .all_internal_ids()
-                .into_iter()
-                .filter_map(|id| {
-                    storage_view
-                        .distance_quantized(query, &quantized_query, id, metric)
-                        .map(|dist| (id, dist))
-                })
-                .collect();
-
-            candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-            Ok(candidates.into_iter().take(k_target).collect())
-        }
     }
 
     /// Get the number of vectors in the database

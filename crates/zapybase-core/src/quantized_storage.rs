@@ -95,6 +95,26 @@ impl QuantizedStorage {
         vector: &[f32],
         metadata: Option<Value>,
     ) -> Result<InternalId> {
+        self.insert_internal(id, vector, metadata, false)
+    }
+
+    /// Insert or update a vector
+    pub fn upsert(
+        &self,
+        id: VectorId,
+        vector: &[f32],
+        metadata: Option<Value>,
+    ) -> Result<InternalId> {
+        self.insert_internal(id, vector, metadata, true)
+    }
+
+    fn insert_internal(
+        &self,
+        id: VectorId,
+        vector: &[f32],
+        metadata: Option<Value>,
+        allow_update: bool,
+    ) -> Result<InternalId> {
         if vector.len() != self.dimensions {
             return Err(Error::DimensionMismatch {
                 expected: self.dimensions,
@@ -103,7 +123,7 @@ impl QuantizedStorage {
         }
 
         let mut id_to_internal = self.id_to_internal.write();
-        if id_to_internal.contains_key(&id) {
+        if !allow_update && id_to_internal.contains_key(&id) {
             return Err(Error::DuplicateId(id.to_string()));
         }
 
@@ -243,6 +263,11 @@ impl QuantizedStorage {
     pub fn get_external_id(&self, internal_id: InternalId) -> Option<VectorId> {
         let internal_to_id = self.internal_to_id.read();
         internal_to_id.get(internal_id.as_usize()).cloned()
+    }
+
+    /// Get internal ID from external ID
+    pub fn get_internal_id(&self, id: &VectorId) -> Option<InternalId> {
+        self.id_to_internal.read().get(id).copied()
     }
 
     /// Get all internal IDs

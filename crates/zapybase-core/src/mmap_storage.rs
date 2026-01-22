@@ -265,6 +265,20 @@ impl MmapStorage {
 
     /// Insert a vector and return its internal ID
     pub fn insert(&self, id: VectorId, vector: &[f32]) -> Result<InternalId> {
+        self.insert_internal(id, vector, false)
+    }
+
+    /// Insert or update a vector
+    pub fn upsert(&self, id: VectorId, vector: &[f32]) -> Result<InternalId> {
+        self.insert_internal(id, vector, true)
+    }
+
+    fn insert_internal(
+        &self,
+        id: VectorId,
+        vector: &[f32],
+        allow_update: bool,
+    ) -> Result<InternalId> {
         if vector.len() != self.dimensions {
             return Err(Error::DimensionMismatch {
                 expected: self.dimensions,
@@ -275,7 +289,7 @@ impl MmapStorage {
         // Check for duplicate
         {
             let id_to_internal = self.id_to_internal.read();
-            if id_to_internal.contains_key(&id) {
+            if !allow_update && id_to_internal.contains_key(&id) {
                 return Err(Error::DuplicateId(id.to_string()));
             }
         }

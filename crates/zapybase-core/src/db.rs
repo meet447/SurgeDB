@@ -37,10 +37,31 @@ impl Collection {
         }
     }
 
+    pub fn upsert(&self, id: String, vector: &[f32], metadata: Option<Value>) -> Result<()> {
+        match self {
+            Collection::Standard(db) => db.write().upsert(id, vector, metadata),
+            Collection::Quantized(db) => db.write().upsert(id, vector, metadata),
+        }
+    }
+
+    pub fn get(&self, id: &str) -> Result<Option<(Vec<f32>, Option<Value>)>> {
+        match self {
+            Collection::Standard(db) => db.read().get(id),
+            Collection::Quantized(db) => db.read().get(id),
+        }
+    }
+
     pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
         match self {
             Collection::Standard(db) => db.read().search(query, k),
             Collection::Quantized(db) => db.read().search(query, k),
+        }
+    }
+
+    pub fn list(&self, offset: usize, limit: usize) -> Vec<VectorId> {
+        match self {
+            Collection::Standard(db) => db.read().list(offset, limit),
+            Collection::Quantized(db) => db.read().list(offset, limit),
         }
     }
 

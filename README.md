@@ -128,12 +128,16 @@ cargo run --release -p zapybase-server
 ```bash
 curl -X POST http://localhost:3000/collections \
   -H "Content-Type: application/json" \
-  -d '{ "name": "docs", "dimensions": 384 }'
+  -d '{ 
+    "name": "docs", 
+    "dimensions": 384,
+    "quantization": "SQ8" 
+  }'
 ```
 
-**Insert Vector**
+**Upsert Vector (Insert or Update)**
 ```bash
-curl -X POST http://localhost:3000/collections/docs/vectors \
+curl -X POST http://localhost:3000/collections/docs/upsert \
   -H "Content-Type: application/json" \
   -d '{
     "id": "vec1",
@@ -142,11 +146,38 @@ curl -X POST http://localhost:3000/collections/docs/vectors \
   }'
 ```
 
+**Batch Upsert (Bulk)**
+```bash
+curl -X POST http://localhost:3000/collections/docs/vectors/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vectors": [
+      { "id": "vec1", "vector": [...], "metadata": {...} },
+      { "id": "vec2", "vector": [...], "metadata": {...} }
+    ]
+  }'
+```
+
+**Get Vector by ID**
+```bash
+curl http://localhost:3000/collections/docs/vectors/vec1
+```
+
+**List Vectors (Pagination)**
+```bash
+curl "http://localhost:3000/collections/docs/vectors?offset=0&limit=10"
+```
+
 **Search**
 ```bash
 curl -X POST http://localhost:3000/collections/docs/search \
   -H "Content-Type: application/json" \
   -d '{ "vector": [0.1, 0.2, 0.3, ...], "k": 5 }'
+```
+
+**Delete Collection**
+```bash
+curl -X DELETE http://localhost:3000/collections/docs
 ```
 
 ---
