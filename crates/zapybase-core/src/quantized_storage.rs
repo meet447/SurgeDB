@@ -5,6 +5,7 @@
 use crate::distance::DistanceMetric;
 use crate::error::{Error, Result};
 use crate::quantization::{BinaryQuantizer, QuantizationType, SQ8Metadata, SQ8Quantizer};
+use crate::storage::VectorStorageTrait;
 use crate::types::{InternalId, VectorId};
 use parking_lot::RwLock;
 use serde_json::Value;
@@ -342,6 +343,82 @@ impl QuantizedStorage {
             original_vectors,
         }
     }
+
+    /// Quantize a query vector for fast distance calculations
+    pub fn quantize_query(&self, query: &[f32]) -> QuantizedQuery {
+        match self.quantization {
+            QuantizationType::None => QuantizedQuery::None,
+            QuantizationType::SQ8 => {
+                // For SQ8 asymmetric search, we don't necessarily quantize the query
+                // because we compare f32 query vs u8 stored.
+                // However, we might want to pre-process it if possible?
+                // Actually, the asymmetric_distance function takes &[f32].
+                // So no quantization needed for query.
+                QuantizedQuery::SQ8
+            }
+            QuantizationType::Binary => {
+                if let Some(quantizer) = &self.binary_quantizer {
+                    let binary = quantizer.quantize(query);
+                    QuantizedQuery::Binary(binary)
+                } else {
+                    QuantizedQuery::None
+                }
+            }
+        }
+    }
+}
+
+impl VectorStorageTrait for QuantizedStorage {
+    fn get_vector_data(&self, internal_id: InternalId) -> Option<Vec<f32>> {
+        // If we have originals, return them
+        if let Some(orig) = self.get_original(internal_id) {
+            return Some(orig);
+        }
+
+        // Dequantize on demand
+        match self.quantization {
+            QuantizationType::None => None, // Should have been handled by get_original
+            QuantizationType::SQ8 => {
+                let quantizer = self.sq8_quantizer.as_ref()?;
+                let sq8_vectors = self.sq8_vectors.read();
+                let sq8_metadata = self.sq8_metadata.read();
+
+                let idx = internal_id.as_usize();
+                if idx >= sq8_metadata.len() {
+                    return None;
+                }
+
+                let start = idx * self.dimensions;
+                let end = start + self.dimensions;
+                if end > sq8_vectors.len() {
+                    return None;
+                }
+
+                Some(quantizer.dequantize(&sq8_vectors[start..end], &sq8_metadata[idx]))
+            }
+            QuantizationType::Binary => {
+                // Binary cannot be easily dequantized to f32 without massive loss
+                None
+            }
+        }
+    }
+
+    fn distance(
+        &self,
+        internal_id: InternalId,
+        query: &[f32],
+        metric: DistanceMetric,
+    ) -> Option<f32> {
+        self.distance(query, internal_id, metric)
+    }
+}
+
+/// A pre-quantized query vector to avoid reallocation during search
+#[derive(Debug, Clone)]
+pub enum QuantizedQuery {
+    None,
+    SQ8, // Placeholder as we use asymmetric distance (f32 query)
+    Binary(Vec<u8>),
 }
 
 /// A view into QuantizedStorage that holds read locks
@@ -357,10 +434,11 @@ pub struct QuantizedStorageView<'a> {
 }
 
 impl<'a> QuantizedStorageView<'a> {
-    /// Calculate distance from query to stored vector
-    pub fn distance(
+    /// Calculate distance using a pre-quantized query
+    pub fn distance_quantized(
         &self,
         query: &[f32],
+        quantized_query: &QuantizedQuery,
         internal_id: InternalId,
         metric: DistanceMetric,
     ) -> Option<f32> {
@@ -401,6 +479,12 @@ impl<'a> QuantizedStorageView<'a> {
                 let quantizer = self.binary_quantizer?;
                 let binary_vectors = self.binary_vectors.as_ref()?;
 
+                // Use pre-quantized query if available
+                let query_binary = match quantized_query {
+                    QuantizedQuery::Binary(b) => b,
+                    _ => return None, // Should not happen if logic is correct
+                };
+
                 let byte_size = quantizer.byte_size();
                 let start = internal_id.as_usize() * byte_size;
                 let end = start + byte_size;
@@ -409,23 +493,70 @@ impl<'a> QuantizedStorageView<'a> {
                     return None;
                 }
 
-                // Note: We are quantizing the query on every call here if not careful.
-                // ideally we should pre-quantize the query once.
-                // But for now, let's keep it simple. Optimization: Caller could pre-quantize.
-                // But the interface takes &[f32].
-                // The `quantizer.quantize` is fast enough for now (SIMD), but avoiding alloc is better.
-                // Actually `quantizer.quantize` returns Vec<u8>, which is an alloc.
-                // This is a bottleneck inside the loop!
-                // But we can't change the signature easily without larger refactor.
-                // Let's stick to locking optimization first.
-
-                let query_binary = quantizer.quantize(query);
                 let stored = &binary_vectors[start..end];
-
-                let hamming = quantizer.hamming_distance(&query_binary, stored);
+                let hamming = quantizer.hamming_distance(query_binary, stored);
                 Some(quantizer.hamming_to_cosine(hamming))
             }
         }
+    }
+
+    /// Calculate distance from query to stored vector (legacy/slow path)
+    pub fn distance(
+        &self,
+        query: &[f32],
+        internal_id: InternalId,
+        metric: DistanceMetric,
+    ) -> Option<f32> {
+        // Fallback to non-pre-quantized distance
+        self.distance_quantized(query, &QuantizedQuery::None, internal_id, metric)
+    }
+}
+
+impl<'a> VectorStorageTrait for QuantizedStorageView<'a> {
+    fn get_vector_data(&self, internal_id: InternalId) -> Option<Vec<f32>> {
+        // If we have originals, return them
+        if let Some(originals) = &self.original_vectors {
+            if let Some(ref vecs) = **originals {
+                let start = internal_id.as_usize() * self.dimensions;
+                let end = start + self.dimensions;
+                if end <= vecs.len() {
+                    return Some(vecs[start..end].to_vec());
+                }
+            }
+        }
+
+        match self.quantization {
+            QuantizationType::None => None,
+            QuantizationType::SQ8 => {
+                let quantizer = self.sq8_quantizer?;
+                let sq8_vectors = self.sq8_vectors.as_ref()?;
+                let sq8_metadata = self.sq8_metadata.as_ref()?;
+
+                let idx = internal_id.as_usize();
+                if idx >= sq8_metadata.len() {
+                    return None;
+                }
+
+                let start = idx * self.dimensions;
+                let end = start + self.dimensions;
+                if end > sq8_vectors.len() {
+                    return None;
+                }
+
+                Some(quantizer.dequantize(&sq8_vectors[start..end], &sq8_metadata[idx]))
+            }
+            QuantizationType::Binary => None,
+        }
+    }
+
+    fn distance(
+        &self,
+        internal_id: InternalId,
+        query: &[f32],
+        metric: DistanceMetric,
+    ) -> Option<f32> {
+        // Fallback to non-pre-quantized distance
+        self.distance_quantized(query, &QuantizedQuery::None, internal_id, metric)
     }
 }
 
