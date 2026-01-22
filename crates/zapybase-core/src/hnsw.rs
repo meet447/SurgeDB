@@ -595,7 +595,7 @@ mod tests {
         let storage = create_test_storage();
 
         let id = storage
-            .insert("vec1".into(), &[1.0, 0.0, 0.0, 0.0])
+            .insert("vec1".into(), &[1.0, 0.0, 0.0, 0.0], None)
             .unwrap();
         index.insert(id, &[1.0, 0.0, 0.0, 0.0], &storage).unwrap();
 
@@ -616,7 +616,7 @@ mod tests {
         ];
 
         for (i, v) in vectors.iter().enumerate() {
-            let id = storage.insert(format!("vec{}", i).into(), v).unwrap();
+            let id = storage.insert(format!("vec{}", i).into(), v, None).unwrap();
             index.insert(id, v, &storage).unwrap();
         }
 
@@ -638,7 +638,7 @@ mod tests {
         ];
 
         for (name, v) in &vectors {
-            let id = storage.insert((*name).into(), v).unwrap();
+            let id = storage.insert((*name).into(), v, None).unwrap();
             index.insert(id, v, &storage).unwrap();
         }
 

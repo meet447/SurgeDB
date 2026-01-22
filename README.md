@@ -26,16 +26,16 @@ We validate every build for **Recall** (accuracy) and **Latency**.
 ### **Standard Workload (2k vectors, 128 dim)**
 | Mode | Recall @ 10 | Latency (Avg) | Compression |
 | :--- | :--- | :--- | :--- |
-| **HNSW (In-Memory)** | **98.7%** | **0.21 ms** | 1x |
-| **SQ8 (Quantized)** | **99.5%** | **0.78 ms** | **3.76x** |
-| **Binary (1-bit)** | 30.0% | 1.13 ms | 32.0x |
+| **HNSW (In-Memory)** | **98.8%** | **0.15 ms** | 1x |
+| **SQ8 (Quantized)** | **99.2%** | **0.16 ms** | **3.76x** |
+| **Binary (1-bit)** | 28.0% | 0.22 ms | 32.0x |
 
 ### **Scaling Benchmarks (384 dim)**
 | Dataset Size | Mode | Latency (Avg) | Throughput | Memory Usage |
 | :--- | :--- | :--- | :--- | :--- |
-| **50,000 Vectors** | **HNSW** | **0.80 ms** | 1,254 QPS | ~87 MB |
-| **50,000 Vectors** | **SQ8** | 9.55 ms | 105 QPS | **~20 MB** |
-| **100,000 Vectors** | **SQ8** | 18.93 ms | 53 QPS | **~39 MB** |
+| **50,000 Vectors** | **HNSW** | **0.80 ms** | 1,255 QPS | ~87 MB |
+| **50,000 Vectors** | **SQ8** | 9.52 ms | 105 QPS | **~20 MB** |
+| **100,000 Vectors** | **SQ8** | 18.89 ms | 53 QPS | **~39 MB** |
 
 *Performance measured on M2 Mac. HNSW provides sub-millisecond search at scale, while SQ8 offers massive memory savings.*
 

@@ -418,7 +418,7 @@ fn run_quantized_bench(vectors: &[Vec<f32>], dimensions: usize, quant_type: Quan
     println!("Inserting vectors (quantized storage)...");
     let start = Instant::now();
     for (i, vector) in vectors.iter().enumerate() {
-        db.insert(format!("vec_{}", i), vector)
+        db.insert(format!("vec_{}", i), vector, None)
             .expect("Failed to insert");
 
         if (i + 1) % 1000 == 0 {
@@ -826,7 +826,7 @@ fn run_comparison(count: usize, dimensions: usize) {
         // Insert
         let start = Instant::now();
         for (i, vector) in vectors.iter().enumerate() {
-            db.insert(format!("vec_{}", i), vector).unwrap();
+            db.insert(format!("vec_{}", i), vector, None).unwrap();
         }
         let insert_time = start.elapsed().as_millis();
 
@@ -978,7 +978,7 @@ fn run_validation(count: usize, dimensions: usize, k: usize) {
         };
         let mut db = QuantizedVectorDb::new(config).unwrap();
         for (i, v) in vectors.iter().enumerate() {
-            db.insert(format!("{}", i), v).unwrap();
+            db.insert(format!("{}", i), v, None).unwrap();
         }
 
         let (recall, latency) = measure_quantized_db_performance(&db, &queries, &ground_truth, k);
@@ -1001,7 +1001,7 @@ fn run_validation(count: usize, dimensions: usize, k: usize) {
         };
         let mut db = QuantizedVectorDb::new(config).unwrap();
         for (i, v) in vectors.iter().enumerate() {
-            db.insert(format!("{}", i), v).unwrap();
+            db.insert(format!("{}", i), v, None).unwrap();
         }
 
         let (recall, latency) = measure_quantized_db_performance(&db, &queries, &ground_truth, k);
@@ -1169,8 +1169,10 @@ fn measure_quantized_db_performance(
 
     for (i, query) in queries.iter().enumerate() {
         let results = db.search(query, k).unwrap();
-        let result_ids: std::collections::HashSet<String> =
-            results.into_iter().map(|(id, _)| id.to_string()).collect();
+        let result_ids: std::collections::HashSet<String> = results
+            .into_iter()
+            .map(|(id, _, _)| id.to_string())
+            .collect();
 
         for &id_idx in &truth[i] {
             if result_ids.contains(&format!("{}", id_idx)) {

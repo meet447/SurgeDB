@@ -408,6 +408,84 @@ impl MmapStorage {
     pub fn disk_usage(&self) -> u64 {
         *self.file_size.read()
     }
+
+    /// Create a view of the storage that holds a read lock
+    /// This is optimized for bulk operations like search
+    pub fn view(&self) -> MmapStorageView<'_> {
+        MmapStorageView {
+            guard: self.mmap.read(),
+            dimensions: self.dimensions,
+        }
+    }
+}
+
+/// A view into MmapStorage that holds a read lock on the data
+pub struct MmapStorageView<'a> {
+    guard: parking_lot::RwLockReadGuard<'a, Option<Mmap>>,
+    dimensions: usize,
+}
+
+impl<'a> crate::storage::VectorStorageTrait for MmapStorageView<'a> {
+    fn get_vector_data(&self, internal_id: InternalId) -> Option<Vec<f32>> {
+        let mmap = self.guard.as_ref()?;
+        let bytes = mmap.as_slice();
+
+        if bytes.is_empty() {
+            return None;
+        }
+
+        let vector_size = self.dimensions * 4;
+        let offset = HEADER_SIZE + internal_id.as_usize() * vector_size;
+        let end = offset + vector_size;
+
+        if end > bytes.len() {
+            return None;
+        }
+
+        let vector_bytes = &bytes[offset..end];
+        let vector: Vec<f32> = vector_bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
+
+        Some(vector)
+    }
+
+    fn distance(
+        &self,
+        internal_id: InternalId,
+        query: &[f32],
+        metric: DistanceMetric,
+    ) -> Option<f32> {
+        let mmap = self.guard.as_ref()?;
+        let bytes = mmap.as_slice();
+
+        if bytes.is_empty() {
+            return None;
+        }
+
+        let vector_size = self.dimensions * 4;
+        let offset = HEADER_SIZE + internal_id.as_usize() * vector_size;
+        let end = offset + vector_size;
+
+        if end > bytes.len() {
+            return None;
+        }
+
+        let vector_bytes = &bytes[offset..end];
+
+        let (prefix, vector_slice, suffix) = unsafe { vector_bytes.align_to::<f32>() };
+
+        if !prefix.is_empty() || !suffix.is_empty() {
+            let vector: Vec<f32> = vector_bytes
+                .chunks_exact(4)
+                .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect();
+            Some(metric.distance(query, &vector))
+        } else {
+            Some(metric.distance(query, vector_slice))
+        }
+    }
 }
 
 /// Implement VectorStorageTrait for MmapStorage

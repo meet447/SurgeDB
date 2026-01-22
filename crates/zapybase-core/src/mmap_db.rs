@@ -129,7 +129,7 @@ impl MmapVectorDb {
             });
         }
 
-        let results = self.index.search(query, k, &self.storage)?;
+        let results = self.index.search(query, k, &self.storage.view())?;
 
         let mapped: Vec<(VectorId, f32)> = results
             .into_iter()

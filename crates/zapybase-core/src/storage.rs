@@ -166,6 +166,52 @@ impl VectorStorage {
 
         vectors_size + map_overhead + rev_map_overhead
     }
+
+    /// Create a view of the storage that holds a read lock
+    /// This is optimized for bulk operations like search
+    pub fn view(&self) -> VectorStorageView<'_> {
+        VectorStorageView {
+            guard: self.vectors.read(),
+            dimensions: self.dimensions,
+        }
+    }
+}
+
+/// A view into VectorStorage that holds a read lock on the data
+/// This avoids repeated locking during search
+pub struct VectorStorageView<'a> {
+    guard: parking_lot::RwLockReadGuard<'a, Vec<f32>>,
+    dimensions: usize,
+}
+
+impl<'a> VectorStorageTrait for VectorStorageView<'a> {
+    fn get_vector_data(&self, internal_id: InternalId) -> Option<Vec<f32>> {
+        let start = internal_id.as_usize() * self.dimensions;
+        let end = start + self.dimensions;
+
+        if end <= self.guard.len() {
+            Some(self.guard[start..end].to_vec())
+        } else {
+            None
+        }
+    }
+
+    fn distance(
+        &self,
+        internal_id: InternalId,
+        query: &[f32],
+        metric: DistanceMetric,
+    ) -> Option<f32> {
+        let start = internal_id.as_usize() * self.dimensions;
+        let end = start + self.dimensions;
+
+        if end <= self.guard.len() {
+            let vector_slice = &self.guard[start..end];
+            Some(metric.distance(query, vector_slice))
+        } else {
+            None
+        }
+    }
 }
 
 /// Implement the trait for VectorStorage

@@ -16,7 +16,7 @@
 //! let mut db = VectorDb::new(config).unwrap();
 //!
 //! // Insert vectors
-//! db.insert("vec1", &[0.1, 0.2, 0.3, 0.4]).unwrap();
+//! db.insert("vec1", &[0.1, 0.2, 0.3, 0.4], None).unwrap();
 //!
 //! // Search for similar vectors
 //! let results = db.search(&[0.1, 0.2, 0.3, 0.4], 10).unwrap();
@@ -34,7 +34,7 @@
 //! let mut db = QuantizedVectorDb::new(config).unwrap();
 //!
 //! // Same API as VectorDb
-//! db.insert("vec1", &[0.1, 0.2, 0.3, 0.4]).unwrap();
+//! db.insert("vec1", &[0.1, 0.2, 0.3, 0.4], None).unwrap();
 //! ```
 //!
 //! # Persistent Database (with crash recovery)
@@ -44,7 +44,7 @@
 //! let config = PersistentConfig::default();
 //! let mut db = PersistentVectorDb::open("./my_db", config).unwrap();
 //!
-//! db.insert("vec1", &[0.1, 0.2, 0.3, 0.4]).unwrap();
+//! db.insert("vec1", &[0.1, 0.2, 0.3, 0.4], None).unwrap();
 //! db.checkpoint().unwrap(); // Create a snapshot
 //! ```
 
@@ -187,7 +187,7 @@ impl VectorDb {
             });
         }
 
-        let results = self.index.search(query, k, &self.storage)?;
+        let results = self.index.search(query, k, &self.storage.view())?;
 
         // Map internal IDs back to external IDs and fetch metadata
         let mapped: Vec<(VectorId, f32, Option<Value>)> = results
@@ -284,12 +284,13 @@ impl QuantizedVectorDb {
         let metric = self.config.distance_metric;
 
         // Calculate distances to all vectors
+        let storage_view = self.storage.view();
         let mut candidates: Vec<(types::InternalId, f32)> = self
             .storage
             .all_internal_ids()
             .into_iter()
             .filter_map(|id| {
-                self.storage
+                storage_view
                     .distance(query, id, metric)
                     .map(|dist| (id, dist))
             })

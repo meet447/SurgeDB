@@ -307,6 +307,126 @@ impl QuantizedStorage {
     pub fn quantization_type(&self) -> QuantizationType {
         self.quantization
     }
+
+    /// Create a view of the storage that holds read locks
+    pub fn view(&self) -> QuantizedStorageView<'_> {
+        let (sq8_vectors, sq8_metadata) = if self.quantization == QuantizationType::SQ8 {
+            (
+                Some(self.sq8_vectors.read()),
+                Some(self.sq8_metadata.read()),
+            )
+        } else {
+            (None, None)
+        };
+
+        let binary_vectors = if self.quantization == QuantizationType::Binary {
+            Some(self.binary_vectors.read())
+        } else {
+            None
+        };
+
+        let original_vectors = if self.quantization == QuantizationType::None {
+            Some(self.original_vectors.read())
+        } else {
+            None
+        };
+
+        QuantizedStorageView {
+            dimensions: self.dimensions,
+            quantization: self.quantization,
+            sq8_quantizer: self.sq8_quantizer.as_ref(),
+            binary_quantizer: self.binary_quantizer.as_ref(),
+            sq8_vectors,
+            sq8_metadata,
+            binary_vectors,
+            original_vectors,
+        }
+    }
+}
+
+/// A view into QuantizedStorage that holds read locks
+pub struct QuantizedStorageView<'a> {
+    dimensions: usize,
+    quantization: QuantizationType,
+    sq8_quantizer: Option<&'a SQ8Quantizer>,
+    binary_quantizer: Option<&'a BinaryQuantizer>,
+    sq8_vectors: Option<parking_lot::RwLockReadGuard<'a, Vec<u8>>>,
+    sq8_metadata: Option<parking_lot::RwLockReadGuard<'a, Vec<SQ8Metadata>>>,
+    binary_vectors: Option<parking_lot::RwLockReadGuard<'a, Vec<u8>>>,
+    original_vectors: Option<parking_lot::RwLockReadGuard<'a, Option<Vec<f32>>>>,
+}
+
+impl<'a> QuantizedStorageView<'a> {
+    /// Calculate distance from query to stored vector
+    pub fn distance(
+        &self,
+        query: &[f32],
+        internal_id: InternalId,
+        metric: DistanceMetric,
+    ) -> Option<f32> {
+        match self.quantization {
+            QuantizationType::None => {
+                let originals = self.original_vectors.as_ref()?;
+                if let Some(ref vecs) = **originals {
+                    let start = internal_id.as_usize() * self.dimensions;
+                    let end = start + self.dimensions;
+                    if end <= vecs.len() {
+                        return Some(metric.distance(query, &vecs[start..end]));
+                    }
+                }
+                None
+            }
+            QuantizationType::SQ8 => {
+                let quantizer = self.sq8_quantizer?;
+                let sq8_vectors = self.sq8_vectors.as_ref()?;
+                let sq8_metadata = self.sq8_metadata.as_ref()?;
+
+                let idx = internal_id.as_usize();
+                if idx >= sq8_metadata.len() {
+                    return None;
+                }
+
+                let start = idx * self.dimensions;
+                let end = start + self.dimensions;
+                if end > sq8_vectors.len() {
+                    return None;
+                }
+
+                let quantized = &sq8_vectors[start..end];
+                let metadata = &sq8_metadata[idx];
+
+                Some(quantizer.asymmetric_distance(query, quantized, metadata, metric))
+            }
+            QuantizationType::Binary => {
+                let quantizer = self.binary_quantizer?;
+                let binary_vectors = self.binary_vectors.as_ref()?;
+
+                let byte_size = quantizer.byte_size();
+                let start = internal_id.as_usize() * byte_size;
+                let end = start + byte_size;
+
+                if end > binary_vectors.len() {
+                    return None;
+                }
+
+                // Note: We are quantizing the query on every call here if not careful.
+                // ideally we should pre-quantize the query once.
+                // But for now, let's keep it simple. Optimization: Caller could pre-quantize.
+                // But the interface takes &[f32].
+                // The `quantizer.quantize` is fast enough for now (SIMD), but avoiding alloc is better.
+                // Actually `quantizer.quantize` returns Vec<u8>, which is an alloc.
+                // This is a bottleneck inside the loop!
+                // But we can't change the signature easily without larger refactor.
+                // Let's stick to locking optimization first.
+
+                let query_binary = quantizer.quantize(query);
+                let stored = &binary_vectors[start..end];
+
+                let hamming = quantizer.hamming_distance(&query_binary, stored);
+                Some(quantizer.hamming_to_cosine(hamming))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
