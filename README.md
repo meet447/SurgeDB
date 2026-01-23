@@ -200,7 +200,11 @@ curl "http://localhost:3000/collections/docs/vectors?offset=0&limit=10"
 ```bash
 curl -X POST http://localhost:3000/collections/docs/search \
   -H "Content-Type: application/json" \
-  -d '{ "vector": [0.1, 0.2, 0.3, ...], "k": 5 }'
+  -d '{ 
+    "vector": [0.1, 0.2, 0.3, ...], 
+    "k": 5,
+    "filter": { "Exact": ["category", "AI"] }
+  }'
 ```
 
 **Delete Collection**

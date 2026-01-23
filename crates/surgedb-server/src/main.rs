@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use surgedb_core::{Config, Database, DistanceMetric, QuantizationType};
+use surgedb_core::filter::Filter;
 
 #[derive(Clone)]
 struct AppState {
@@ -43,6 +44,7 @@ struct BatchInsertRequest {
 struct SearchRequest {
     vector: Vec<f32>,
     k: usize,
+    filter: Option<Filter>,
 }
 
 #[derive(Serialize)]
@@ -325,7 +327,7 @@ async fn search_vector(
     })?;
 
     let result = tokio::task::spawn_blocking(move || {
-        collection.search(&payload.vector, payload.k)
+        collection.search(&payload.vector, payload.k, payload.filter.as_ref())
     }).await.map_err(|e| (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse { error: e.to_string() }),
