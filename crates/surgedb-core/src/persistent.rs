@@ -190,7 +190,7 @@ impl PersistentVectorDb {
     }
 
     /// Search for the k nearest neighbors
-    pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
+    pub fn search(&self, query: &[f32], k: usize, filter: Option<&crate::filter::Filter>) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
         if query.len() != self.config.dimensions {
             return Err(Error::DimensionMismatch {
                 expected: self.config.dimensions,
@@ -198,7 +198,7 @@ impl PersistentVectorDb {
             });
         }
 
-        let results = self.index.search(query, k, &self.storage)?;
+        let results = self.index.search(query, k, &self.storage, filter)?;
 
         let mapped: Vec<(VectorId, f32, Option<Value>)> = results
             .into_iter()
@@ -294,7 +294,7 @@ mod tests {
         db.insert("vec2", &[0.0, 1.0, 0.0, 0.0], None).unwrap();
         db.insert("vec3", &[0.9, 0.1, 0.0, 0.0], None).unwrap();
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).unwrap();
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2, None).unwrap();
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0.as_str(), "vec1");
@@ -321,7 +321,7 @@ mod tests {
             let db = PersistentVectorDb::open(dir.path(), config).unwrap();
             assert_eq!(db.len(), 2);
 
-            let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+            let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1, None).unwrap();
             assert_eq!(results[0].0.as_str(), "vec1");
         }
     }
@@ -351,7 +351,7 @@ mod tests {
             let db = PersistentVectorDb::open(dir.path(), config).unwrap();
             assert_eq!(db.len(), 3);
 
-            let results = db.search(&[0.0, 0.0, 1.0, 0.0], 1).unwrap();
+            let results = db.search(&[0.0, 0.0, 1.0, 0.0], 1, None).unwrap();
             assert_eq!(results[0].0.as_str(), "vec3");
         }
     }

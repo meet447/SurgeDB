@@ -64,10 +64,10 @@ impl Collection {
         }
     }
 
-    pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
+    pub fn search(&self, query: &[f32], k: usize, filter: Option<&crate::filter::Filter>) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
         match self {
-            Collection::Standard(db) => db.read().search(query, k),
-            Collection::Quantized(db) => db.read().search(query, k),
+            Collection::Standard(db) => db.read().search(query, k, filter),
+            Collection::Quantized(db) => db.read().search(query, k, filter),
         }
     }
 

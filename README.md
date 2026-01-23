@@ -28,6 +28,7 @@ Most vector databases are designed for massive cloud clusters. SurgeDB is design
 * **ACID-Compliant Persistence**: Write-Ahead Log (WAL) and Snapshots for crash-safe data.
 * **Mmap Support**: Disk-resident vectors for datasets larger than RAM.
 * **Collections & Metadata**: Manage multiple collections with rich JSON metadata.
+* **Metadata Filtering**: Filter search results using structured queries (e.g., `category == "books"`).
 * **HTTP Server**: Built-in high-performance Axum server for easy deployment.
 
 ---

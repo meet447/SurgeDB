@@ -477,6 +477,7 @@ impl QuantizedStorage {
             sq8_metadata,
             binary_vectors,
             original_vectors,
+            metadata: Some(self.metadata.read()),
         }
     }
 
@@ -567,6 +568,7 @@ pub struct QuantizedStorageView<'a> {
     sq8_metadata: Option<parking_lot::RwLockReadGuard<'a, Vec<SQ8Metadata>>>,
     binary_vectors: Option<parking_lot::RwLockReadGuard<'a, Vec<u8>>>,
     original_vectors: Option<parking_lot::RwLockReadGuard<'a, Option<Vec<f32>>>>,
+    metadata: Option<parking_lot::RwLockReadGuard<'a, HashMap<InternalId, Value>>>,
 }
 
 impl<'a> QuantizedStorageView<'a> {
@@ -693,6 +695,10 @@ impl<'a> VectorStorageTrait for QuantizedStorageView<'a> {
     ) -> Option<f32> {
         // Fallback to non-pre-quantized distance
         self.distance_quantized(query, &QuantizedQuery::None, internal_id, metric)
+    }
+
+    fn get_metadata(&self, internal_id: InternalId) -> Option<Value> {
+        self.metadata.as_ref().and_then(|m| m.get(&internal_id).cloned())
     }
 }
 

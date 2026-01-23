@@ -13,6 +13,7 @@ use crate::types::InternalId;
 use parking_lot::RwLock;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use crate::filter::Filter;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
@@ -253,6 +254,7 @@ impl HnswIndex {
                                 layer,
                                 &nodes,
                                 storage,
+                                None,
                             ) {
                                 // Select best neighbors
                                 let m = if layer == 0 {
@@ -409,6 +411,7 @@ impl HnswIndex {
                 layer,
                 &nodes,
                 storage,
+                None,
             )?;
 
             // Select M best neighbors using heuristic
@@ -528,6 +531,7 @@ impl HnswIndex {
         layer: usize,
         nodes: &[HnswNode],
         storage: &impl VectorStorageTrait,
+        filter: Option<&Filter>,
     ) -> Result<Vec<Candidate>> {
         let mut visited = HashSet::new();
         let mut candidates = BinaryHeap::new(); // min-heap
@@ -542,10 +546,22 @@ impl HnswIndex {
             id: entry,
             distance: entry_dist,
         });
-        results.push(MaxCandidate {
-            id: entry,
-            distance: entry_dist,
-        });
+
+        // Check if entry point matches filter
+        let entry_matches = if let Some(f) = filter {
+            storage.get_metadata(entry)
+                .map(|m| f.matches(&m))
+                .unwrap_or(false)
+        } else {
+            true
+        };
+
+        if entry_matches {
+            results.push(MaxCandidate {
+                id: entry,
+                distance: entry_dist,
+            });
+        }
 
         while let Some(current) = candidates.pop() {
             // Get the furthest result
@@ -569,13 +585,25 @@ impl HnswIndex {
                                     id: neighbor_id,
                                     distance: dist,
                                 });
-                                results.push(MaxCandidate {
-                                    id: neighbor_id,
-                                    distance: dist,
-                                });
 
-                                if results.len() > ef {
-                                    results.pop();
+                                // Check filter before adding to results
+                                let matches_filter = if let Some(f) = filter {
+                                    storage.get_metadata(neighbor_id)
+                                        .map(|m| f.matches(&m))
+                                        .unwrap_or(false)
+                                } else {
+                                    true
+                                };
+
+                                if matches_filter {
+                                    results.push(MaxCandidate {
+                                        id: neighbor_id,
+                                        distance: dist,
+                                    });
+
+                                    if results.len() > ef {
+                                        results.pop();
+                                    }
                                 }
                             }
                         }
@@ -671,6 +699,7 @@ impl HnswIndex {
         query: &[f32],
         k: usize,
         storage: &impl VectorStorageTrait,
+        filter: Option<&Filter>,
     ) -> Result<Vec<(InternalId, f32)>> {
         let nodes = self.nodes.read();
         let entry_point = self.entry_point.read();
@@ -689,7 +718,7 @@ impl HnswIndex {
 
         // Search in layer 0 with ef_search
         let ef = self.config.ef_search.max(k);
-        let candidates = self.search_layer(query, current_ep, ef, 0, &nodes, storage)?;
+        let candidates = self.search_layer(query, current_ep, ef, 0, &nodes, storage, filter)?;
 
         // Return top k
         Ok(candidates

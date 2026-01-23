@@ -23,6 +23,11 @@ pub trait VectorStorageTrait {
         query: &[f32],
         metric: DistanceMetric,
     ) -> Option<f32>;
+
+    /// Get metadata for a vector
+    fn get_metadata(&self, internal_id: InternalId) -> Option<Value> {
+        None
+    }
 }
 
 /// In-memory vector storage with ID mapping
@@ -257,6 +262,7 @@ impl VectorStorage {
     pub fn view(&self) -> VectorStorageView<'_> {
         VectorStorageView {
             guard: self.vectors.read(),
+            metadata_guard: self.metadata.read(),
             dimensions: self.dimensions,
         }
     }
@@ -266,6 +272,7 @@ impl VectorStorage {
 /// This avoids repeated locking during search
 pub struct VectorStorageView<'a> {
     guard: parking_lot::RwLockReadGuard<'a, Vec<f32>>,
+    metadata_guard: parking_lot::RwLockReadGuard<'a, HashMap<InternalId, Value>>,
     dimensions: usize,
 }
 
@@ -297,6 +304,11 @@ impl<'a> VectorStorageTrait for VectorStorageView<'a> {
             None
         }
     }
+
+
+    fn get_metadata(&self, internal_id: InternalId) -> Option<Value> {
+        self.metadata_guard.get(&internal_id).cloned()
+    }
 }
 
 /// Implement the trait for VectorStorage
@@ -321,6 +333,9 @@ impl VectorStorageTrait for VectorStorage {
         } else {
             None
         }
+    }
+    fn get_metadata(&self, internal_id: InternalId) -> Option<Value> {
+        self.get_metadata(internal_id)
     }
 }
 

@@ -51,6 +51,7 @@
 pub mod db;
 pub mod distance;
 pub mod error;
+pub mod filter;
 pub mod hnsw;
 pub mod mmap_db;
 pub mod mmap_storage;
@@ -270,7 +271,7 @@ impl VectorDb {
     }
 
     /// Search for the k nearest neighbors
-    pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
+    pub fn search(&self, query: &[f32], k: usize, filter: Option<&filter::Filter>) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
         if query.len() != self.config.dimensions {
             return Err(Error::DimensionMismatch {
                 expected: self.config.dimensions,
@@ -281,7 +282,7 @@ impl VectorDb {
         // We search for more candidates (2x k) to account for potential stale/deleted entries
         // that might be filtered out.
         let search_k = k * 2;
-        let results = self.index.search(query, search_k, &self.storage.view())?;
+        let results = self.index.search(query, search_k, &self.storage.view(), filter)?;
 
         // Map internal IDs back to external IDs and fetch metadata
         // Filter out stale entries (where internal_id doesn't match current mapping)
@@ -477,7 +478,7 @@ impl QuantizedVectorDb {
     }
 
     /// Search for the k nearest neighbors
-    pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
+    pub fn search(&self, query: &[f32], k: usize, filter: Option<&filter::Filter>) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
         if query.len() != self.config.dimensions {
             return Err(Error::DimensionMismatch {
                 expected: self.config.dimensions,
@@ -504,7 +505,7 @@ impl QuantizedVectorDb {
         // Use HNSW if available
         let results: Vec<(types::InternalId, f32)> = if let Some(index) = &self.index {
             // HNSW Search
-            index.search(query, search_k, &self.storage.view())?
+            index.search(query, search_k, &self.storage.view(), filter)?
         } else {
             // Fallback to Brute Force
             let storage_view = self.storage.view();
@@ -514,6 +515,17 @@ impl QuantizedVectorDb {
                 .storage
                 .all_internal_ids()
                 .into_iter()
+                .filter(|&id| {
+                    if let Some(f) = filter {
+                         if let Some(meta) = self.storage.get_metadata(id) {
+                             f.matches(&meta)
+                         } else {
+                             false
+                         }
+                    } else {
+                        true
+                    }
+                })
                 .filter_map(|id| {
                     storage_view
                         .distance_quantized(query, &quantized_query, id, metric)
@@ -617,7 +629,7 @@ mod tests {
         db.insert("vec2", &[0.0, 1.0, 0.0, 0.0], None).unwrap();
         db.insert("vec3", &[0.9, 0.1, 0.0, 0.0], None).unwrap();
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).unwrap();
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2, None).unwrap();
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0.as_str(), "vec1"); // Exact match should be first
@@ -636,7 +648,7 @@ mod tests {
         db.insert("vec1", &[1.0, 0.0, 0.0, 0.0], Some(meta.clone()))
             .unwrap();
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).unwrap();
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1, None).unwrap();
         assert_eq!(results[0].2, Some(meta));
     }
 
@@ -654,7 +666,7 @@ mod tests {
         db.insert("vec2", &[0.0, 1.0, 0.0, 0.0], None).unwrap();
         db.insert("vec3", &[0.9, 0.1, 0.0, 0.0], None).unwrap();
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).unwrap();
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2, None).unwrap();
 
         assert_eq!(results.len(), 2);
         // First result should be vec1 (exact match) or vec3 (very similar)
@@ -683,7 +695,7 @@ mod tests {
             .unwrap();
 
         let results = db
-            .search(&[1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0], 2)
+            .search(&[1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0], 2, None)
             .unwrap();
 
         assert_eq!(results.len(), 2);
@@ -707,7 +719,7 @@ mod tests {
         db.insert("vec2", &[0.0, 1.0, 0.0, 0.0], None).unwrap();
         db.insert("vec3", &[0.95, 0.05, 0.0, 0.0], None).unwrap();
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).unwrap();
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2, None).unwrap();
 
         assert_eq!(results.len(), 2);
         // With re-ranking, vec1 should definitely be first
