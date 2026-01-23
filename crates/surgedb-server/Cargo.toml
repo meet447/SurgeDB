@@ -1,13 +1,13 @@
 [package]
-name = "zapybase-server"
+name = "surgedb-server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "HTTP API server for ZappyBase"
+description = "HTTP API server for SurgeDB"
 
 [dependencies]
-zapybase-core = { path = "../zapybase-core" }
+surgedb-core = { path = "../surgedb-core" }
 axum = "0.7"
 tokio = { version = "1.0", features = ["full"] }
 serde = { workspace = true, features = ["derive"] }

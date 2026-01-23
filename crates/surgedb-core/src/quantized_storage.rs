@@ -122,18 +122,27 @@ impl QuantizedStorage {
             });
         }
 
+        {
+            let id_to_internal = self.id_to_internal.read();
+            if !allow_update && id_to_internal.contains_key(&id) {
+                return Err(Error::DuplicateId(id.to_string()));
+            }
+        }
+
+        let mut internal_to_id = self.internal_to_id.write();
         let mut id_to_internal = self.id_to_internal.write();
+        let mut metadata_store = self.metadata.write();
+
+        // Double check
         if !allow_update && id_to_internal.contains_key(&id) {
             return Err(Error::DuplicateId(id.to_string()));
         }
 
-        let mut internal_to_id = self.internal_to_id.write();
         let internal_id = InternalId::from(internal_to_id.len());
 
         // Store quantized version
         match self.quantization {
             QuantizationType::None => {
-                // For None quantization, store in original_vectors
                 let mut originals = self.original_vectors.write();
                 if let Some(ref mut vecs) = *originals {
                     vecs.extend_from_slice(vector);
@@ -172,10 +181,112 @@ impl QuantizedStorage {
 
         // Store metadata if present
         if let Some(meta) = metadata {
-            self.metadata.write().insert(internal_id, meta);
+            metadata_store.insert(internal_id, meta);
         }
 
         Ok(internal_id)
+    }
+
+    /// Batch insert/upsert vectors
+    pub fn upsert_batch(
+        &self,
+        items: &[(VectorId, Vec<f32>, Option<Value>)],
+    ) -> Result<Vec<InternalId>> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Validate dimensions first
+        for (_, vector, _) in items {
+            if vector.len() != self.dimensions {
+                return Err(Error::DimensionMismatch {
+                    expected: self.dimensions,
+                    got: vector.len(),
+                });
+            }
+        }
+
+        let mut internal_to_id = self.internal_to_id.write();
+        let mut id_to_internal = self.id_to_internal.write();
+        let mut metadata_store = self.metadata.write();
+
+        // Locks for vector data
+        let mut sq8_vectors = if self.quantization == QuantizationType::SQ8 {
+            Some(self.sq8_vectors.write())
+        } else {
+            None
+        };
+        let mut sq8_metadata = if self.quantization == QuantizationType::SQ8 {
+            Some(self.sq8_metadata.write())
+        } else {
+            None
+        };
+        let mut binary_vectors = if self.quantization == QuantizationType::Binary {
+            Some(self.binary_vectors.write())
+        } else {
+            None
+        };
+        let mut original_vectors =
+            if self.quantization == QuantizationType::None || self.keep_originals {
+                Some(self.original_vectors.write())
+            } else {
+                None
+            };
+
+        let start_internal_id = internal_to_id.len();
+        let mut result_ids = Vec::with_capacity(items.len());
+
+        for (i, (id, vector, metadata)) in items.iter().enumerate() {
+            let internal_id = InternalId::from(start_internal_id + i);
+            result_ids.push(internal_id);
+
+            // Store Data
+            match self.quantization {
+                QuantizationType::None => {
+                    if let Some(ref mut guard) = original_vectors {
+                        if let Some(ref mut vecs) = **guard {
+                            vecs.extend_from_slice(vector);
+                        }
+                    }
+                }
+                QuantizationType::SQ8 => {
+                    let quantizer = self.sq8_quantizer.as_ref().unwrap();
+                    let (quantized, sq8_meta) = quantizer.quantize(vector);
+                    if let Some(ref mut v) = sq8_vectors {
+                        v.extend_from_slice(&quantized);
+                    }
+                    if let Some(ref mut m) = sq8_metadata {
+                        m.push(sq8_meta);
+                    }
+                }
+                QuantizationType::Binary => {
+                    let quantizer = self.binary_quantizer.as_ref().unwrap();
+                    let quantized = quantizer.quantize(vector);
+                    if let Some(ref mut v) = binary_vectors {
+                        v.extend_from_slice(&quantized);
+                    }
+                }
+            }
+
+            if self.keep_originals && self.quantization != QuantizationType::None {
+                if let Some(ref mut guard) = original_vectors {
+                    if let Some(ref mut vecs) = **guard {
+                        vecs.extend_from_slice(vector);
+                    }
+                }
+            }
+
+            // Update mappings
+            id_to_internal.insert(id.clone(), internal_id);
+            internal_to_id.push(id.clone());
+
+            // Metadata
+            if let Some(meta) = metadata {
+                metadata_store.insert(internal_id, meta.clone());
+            }
+        }
+
+        Ok(result_ids)
     }
 
     /// Calculate distance from query to stored vector

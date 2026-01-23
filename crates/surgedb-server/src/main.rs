@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use zapybase_core::{Config, Database, DistanceMetric, QuantizationType};
+use surgedb_core::{Config, Database, DistanceMetric, QuantizationType};
 
 #[derive(Clone)]
 struct AppState {
@@ -60,7 +60,7 @@ struct ErrorResponse {
 #[derive(Serialize)]
 struct StatsResponse {
     uptime_seconds: u64,
-    database: zapybase_core::DatabaseStats,
+    database: surgedb_core::DatabaseStats,
 }
 
 #[derive(Deserialize)]
@@ -229,11 +229,14 @@ async fn batch_insert_vector(
 
     let count = payload.vectors.len();
     let result = tokio::task::spawn_blocking(move || {
-        for item in payload.vectors {
-            // Use upsert for batch to be safe
-            collection.upsert(item.id, &item.vector, item.metadata)?;
-        }
-        Ok::<(), zapybase_core::Error>(())
+        let items: Vec<(String, Vec<f32>, Option<Value>)> = payload
+            .vectors
+            .into_iter()
+            .map(|item| (item.id, item.vector, item.metadata))
+            .collect();
+        
+        collection.upsert_batch(items)?;
+        Ok::<(), surgedb_core::Error>(())
     }).await.map_err(|e| (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse { error: e.to_string() }),

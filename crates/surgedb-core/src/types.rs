@@ -1,4 +1,4 @@
-//! Core types for ZappyBase
+//! Core types for SurgeDB
 
 use serde::{Deserialize, Serialize};
 

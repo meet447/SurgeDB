@@ -44,6 +44,19 @@ impl Collection {
         }
     }
 
+    pub fn upsert_batch(&self, items: Vec<(String, Vec<f32>, Option<Value>)>) -> Result<()> {
+        // Convert String ID to VectorId
+        let items_converted: Vec<(VectorId, Vec<f32>, Option<Value>)> = items
+            .into_iter()
+            .map(|(id, vec, meta)| (VectorId::from(id), vec, meta))
+            .collect();
+
+        match self {
+            Collection::Standard(db) => db.write().upsert_batch(items_converted),
+            Collection::Quantized(db) => db.write().upsert_batch(items_converted),
+        }
+    }
+
     pub fn get(&self, id: &str) -> Result<Option<(Vec<f32>, Option<Value>)>> {
         match self {
             Collection::Standard(db) => db.read().get(id),

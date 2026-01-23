@@ -1,6 +1,6 @@
-# Contributing to ZappyBase
+# Contributing to SurgeDB
 
-First off, thank you for considering contributing to ZappyBase! It's people like you that make open source such a great community.
+First off, thank you for considering contributing to SurgeDB! It's people like you that make open source such a great community.
 
 ## Development Setup
 

@@ -1,10 +1,10 @@
 [package]
-name = "zapybase-core"
+name = "surgedb-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Core vector indexing engine for ZappyBase"
+description = "Core vector indexing engine for SurgeDB"
 
 [dependencies]
 thiserror.workspace = true
@@ -13,6 +13,7 @@ rand.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode.workspace = true
+rayon = "1.11.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

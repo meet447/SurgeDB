@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/zapybase-core", "crates/zapybase-cli", "crates/zapybase-server"]
+members = ["crates/surgedb-core", "crates/surgedb-cli", "crates/surgedb-server"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 authors = ["Meet Sonawane"]
 license = "MIT"
-repository = "https://github.com/meetsonawane/zapybase"
+repository = "https://github.com/meetsonawane/surgedb"
 description = "A high-performance, lightweight vector database"
 
 [workspace.dependencies]

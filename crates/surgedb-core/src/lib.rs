@@ -1,4 +1,4 @@
-//! ZappyBase Core - High-performance vector database engine
+//! SurgeDB Core - High-performance vector database engine
 //!
 //! A lightweight, SIMD-optimized vector database designed for edge devices.
 //!
@@ -10,7 +10,7 @@
 //!
 //! # Quick Start
 //! ```rust,no_run
-//! use zapybase_core::{VectorDb, Config, DistanceMetric};
+//! use surgedb_core::{VectorDb, Config, DistanceMetric};
 //!
 //! let config = Config::default();
 //! let mut db = VectorDb::new(config).unwrap();
@@ -24,7 +24,7 @@
 //!
 //! # Quantized Database (4x memory reduction)
 //! ```rust,no_run
-//! use zapybase_core::{QuantizedVectorDb, QuantizedConfig, QuantizationType};
+//! use surgedb_core::{QuantizedVectorDb, QuantizedConfig, QuantizationType};
 //!
 //! let config = QuantizedConfig {
 //!     dimensions: 384,
@@ -39,7 +39,7 @@
 //!
 //! # Persistent Database (with crash recovery)
 //! ```rust,no_run
-//! use zapybase_core::{PersistentVectorDb, PersistentConfig};
+//! use surgedb_core::{PersistentVectorDb, PersistentConfig};
 //!
 //! let config = PersistentConfig::default();
 //! let mut db = PersistentVectorDb::open("./my_db", config).unwrap();
@@ -196,6 +196,42 @@ impl VectorDb {
 
         let internal_id = self.storage.upsert(id.clone(), vector, metadata)?;
         self.index.insert(internal_id, vector, &self.storage)?;
+
+        Ok(())
+    }
+
+    /// Batch insert/upsert vectors
+    pub fn upsert_batch(
+        &mut self,
+        items: Vec<(VectorId, Vec<f32>, Option<Value>)>,
+    ) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        // Validate dimensions
+        for (_, vector, _) in &items {
+            if vector.len() != self.config.dimensions {
+                return Err(Error::DimensionMismatch {
+                    expected: self.config.dimensions,
+                    got: vector.len(),
+                });
+            }
+        }
+
+        // 1. Batch Upsert into Storage (Single lock acquisition)
+        let internal_ids = self.storage.upsert_batch(&items)?;
+
+        // 2. Batch Insert into HNSW
+        // We prepare a slice of (InternalId, &[f32]) for HNSW
+        // This avoids copying vectors again if possible, but here vectors are in `items`
+        let hnsw_items: Vec<(types::InternalId, &[f32])> = internal_ids
+            .iter()
+            .zip(items.iter())
+            .map(|(id, (_, vec, _))| (*id, vec.as_slice()))
+            .collect();
+
+        self.index.insert_batch(&hnsw_items, &self.storage)?;
 
         Ok(())
     }
@@ -367,6 +403,42 @@ impl QuantizedVectorDb {
 
         if let Some(index) = &mut self.index {
             index.insert(internal_id, vector, &self.storage)?;
+        }
+
+        Ok(())
+    }
+
+    /// Batch insert/upsert vectors
+    pub fn upsert_batch(
+        &mut self,
+        items: Vec<(VectorId, Vec<f32>, Option<Value>)>,
+    ) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        // Validate dimensions
+        for (_, vector, _) in &items {
+            if vector.len() != self.config.dimensions {
+                return Err(Error::DimensionMismatch {
+                    expected: self.config.dimensions,
+                    got: vector.len(),
+                });
+            }
+        }
+
+        // 1. Batch Upsert into Storage (Single lock acquisition)
+        let internal_ids = self.storage.upsert_batch(&items)?;
+
+        // 2. Batch Insert into HNSW
+        if let Some(index) = &mut self.index {
+            let hnsw_items: Vec<(types::InternalId, &[f32])> = internal_ids
+                .iter()
+                .zip(items.iter())
+                .map(|(id, (_, vec, _))| (*id, vec.as_slice()))
+                .collect();
+
+            index.insert_batch(&hnsw_items, &self.storage)?;
         }
 
         Ok(())

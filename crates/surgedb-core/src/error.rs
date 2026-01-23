@@ -1,11 +1,11 @@
-//! Error types for ZappyBase
+//! Error types for SurgeDB
 
 use thiserror::Error;
 
-/// Result type alias for ZappyBase operations
+/// Result type alias for SurgeDB operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Error types for ZappyBase operations
+/// Error types for SurgeDB operations
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Dimension mismatch: expected {expected}, got {got}")]

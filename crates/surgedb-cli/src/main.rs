@@ -1,17 +1,17 @@
-//! ZappyBase CLI - Command-line interface for the vector database
+//! SurgeDB CLI - Command-line interface for the vector database
 
 use clap::{Parser, Subcommand, ValueEnum};
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Instant;
-use zapybase_core::{
+use surgedb_core::{
     Config, DistanceMetric, MmapConfig, MmapVectorDb, PersistentConfig, PersistentVectorDb,
     QuantizationType, QuantizedConfig, QuantizedVectorDb, VectorDb,
 };
 
 #[derive(Parser)]
-#[command(name = "zapybase")]
+#[command(name = "surgedb")]
 #[command(author = "Meet Sonawane")]
 #[command(version)]
 #[command(about = "A high-performance, lightweight vector database", long_about = None)]
@@ -41,7 +41,7 @@ enum Commands {
         persistent: bool,
 
         /// Data directory for persistent storage
-        #[arg(long, default_value = "./zapybase_data")]
+        #[arg(long, default_value = "./surgedb_data")]
         data_dir: PathBuf,
     },
 
@@ -59,7 +59,7 @@ enum Commands {
     /// Test persistence and recovery
     Persist {
         /// Data directory
-        #[arg(short, long, default_value = "./zapybase_data")]
+        #[arg(short, long, default_value = "./surgedb_data")]
         data_dir: PathBuf,
 
         /// Number of vectors to insert
@@ -74,7 +74,7 @@ enum Commands {
     /// Benchmark mmap storage (disk-resident vectors)
     Mmap {
         /// Data directory
-        #[arg(short, long, default_value = "./zapybase_mmap")]
+        #[arg(short, long, default_value = "./surgedb_mmap")]
         data_dir: PathBuf,
 
         /// Number of vectors to insert
@@ -93,7 +93,7 @@ enum Commands {
         file: PathBuf,
 
         /// Data directory for storage
-        #[arg(short, long, default_value = "./zapybase_data")]
+        #[arg(short, long, default_value = "./surgedb_data")]
         data_dir: PathBuf,
 
         /// Vector dimensions
@@ -108,7 +108,7 @@ enum Commands {
     /// Search the imported database
     Query {
         /// Data directory
-        #[arg(short, long, default_value = "./zapybase_data")]
+        #[arg(short, long, default_value = "./surgedb_data")]
         data_dir: PathBuf,
 
         /// Vector dimensions
@@ -154,7 +154,7 @@ enum Commands {
         threads: usize,
 
         /// Data directory
-        #[arg(long, default_value = "./zapybase_stress")]
+        #[arg(long, default_value = "./surgedb_stress")]
         data_dir: PathBuf,
     },
 
@@ -236,7 +236,7 @@ fn run_import(
     dimensions: usize,
     _quantization: QuantizationArg,
 ) {
-    println!("ZappyBase Import");
+    println!("SurgeDB Import");
     println!("===============");
     println!("File: {}", file.display());
     println!("Dimensions: {}", dimensions);
@@ -261,7 +261,7 @@ fn run_import(
     for (i, item) in items.iter().enumerate() {
         match db.insert(item.id.clone(), &item.vector, None) {
             Ok(_) => {}
-            Err(zapybase_core::Error::DuplicateId(_)) => {
+            Err(surgedb_core::Error::DuplicateId(_)) => {
                 skip_count += 1;
             }
             Err(e) => panic!("Failed to insert: {:?}", e),
@@ -331,7 +331,7 @@ fn run_benchmark(count: usize, dimensions: usize, quantization: QuantizationArg)
         QuantizationArg::Binary => "Binary (1-bit)",
     };
 
-    println!("ZappyBase Benchmark");
+    println!("SurgeDB Benchmark");
     println!("==================");
     println!("Vectors: {}", count);
     println!("Dimensions: {}", dimensions);
@@ -451,7 +451,7 @@ fn run_quantized_bench(vectors: &[Vec<f32>], dimensions: usize, quant_type: Quan
 }
 
 fn run_persistent_benchmark(count: usize, dimensions: usize, data_dir: &PathBuf) {
-    println!("ZappyBase Persistent Benchmark");
+    println!("SurgeDB Persistent Benchmark");
     println!("==============================");
     println!("Vectors: {}", count);
     println!("Dimensions: {}", dimensions);
@@ -520,7 +520,7 @@ fn run_persistent_benchmark(count: usize, dimensions: usize, data_dir: &PathBuf)
 }
 
 fn run_mmap_benchmark(data_dir: &PathBuf, count: usize, dimensions: usize) {
-    println!("ZappyBase Mmap Benchmark");
+    println!("SurgeDB Mmap Benchmark");
     println!("========================");
     println!("Vectors: {}", count);
     println!("Dimensions: {}", dimensions);
@@ -582,7 +582,7 @@ fn run_mmap_benchmark(data_dir: &PathBuf, count: usize, dimensions: usize) {
 }
 
 fn run_persistence_test(data_dir: &PathBuf, count: usize, dimensions: usize) {
-    println!("ZappyBase Persistence Test");
+    println!("SurgeDB Persistence Test");
     println!("==========================");
     println!("Data dir: {}", data_dir.display());
     println!();
@@ -783,7 +783,7 @@ fn run_search_bench_mmap(db: &MmapVectorDb, vectors: &[Vec<f32>], method: &str) 
 }
 
 fn run_comparison(count: usize, dimensions: usize) {
-    println!("ZappyBase Quantization Comparison");
+    println!("SurgeDB Quantization Comparison");
     println!("==================================");
     println!("Vectors: {}", count);
     println!("Dimensions: {}", dimensions);
@@ -854,7 +854,7 @@ fn run_comparison(count: usize, dimensions: usize) {
 }
 
 fn show_info() {
-    println!("ZappyBase v{}", env!("CARGO_PKG_VERSION"));
+    println!("SurgeDB v{}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("A high-performance, lightweight vector database");
     println!();
@@ -884,20 +884,20 @@ fn show_info() {
 
     println!();
     println!("Commands:");
-    println!("  zapybase bench                     Run in-memory benchmark");
-    println!("  zapybase bench -q sq8              Benchmark with SQ8 quantization");
-    println!("  zapybase bench -p                  Benchmark with persistence");
-    println!("  zapybase compare                   Compare quantization modes");
-    println!("  zapybase persist                   Test persistence & recovery");
-    println!("  zapybase mmap                      Benchmark mmap storage");
-    println!("  zapybase validate                  Check Recall & Quality");
-    println!("  zapybase import                    Import vectors from JSON");
-    println!("  zapybase query                     Search imported database");
-    println!("  zapybase stress                    Heavy Stress Test (100k+ vectors)");
+    println!("  surgedb bench                     Run in-memory benchmark");
+    println!("  surgedb bench -q sq8              Benchmark with SQ8 quantization");
+    println!("  surgedb bench -p                  Benchmark with persistence");
+    println!("  surgedb compare                   Compare quantization modes");
+    println!("  surgedb persist                   Test persistence & recovery");
+    println!("  surgedb mmap                      Benchmark mmap storage");
+    println!("  surgedb validate                  Check Recall & Quality");
+    println!("  surgedb import                    Import vectors from JSON");
+    println!("  surgedb query                     Search imported database");
+    println!("  surgedb stress                    Heavy Stress Test (100k+ vectors)");
 }
 
 fn run_validation(count: usize, dimensions: usize, k: usize) {
-    println!("ZappyBase Validation Suite");
+    println!("SurgeDB Validation Suite");
     println!("==========================");
     println!("Testing accuracy and performance across all indexing modes.");
     println!(
@@ -1020,7 +1020,7 @@ fn run_validation(count: usize, dimensions: usize, k: usize) {
 }
 
 fn run_stress_test(count: usize, dimensions: usize, threads: usize, data_dir: &PathBuf) {
-    println!("ZappyBase Industrial Stress Test");
+    println!("SurgeDB Industrial Stress Test");
     println!("===============================");
     println!("Scale: {} vectors", count);
     println!("Dimensions: {}", dimensions);

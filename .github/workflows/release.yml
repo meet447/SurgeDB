@@ -18,19 +18,19 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            output_name: zapybase-server-linux-x86_64
+            output_name: surgedb-server-linux-x86_64
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            output_name: zapybase-server-windows-x86_64
+            output_name: surgedb-server-windows-x86_64
             archive: zip
           - target: aarch64-apple-darwin
             os: macos-latest
-            output_name: zapybase-server-macos-arm64
+            output_name: surgedb-server-macos-arm64
             archive: tar.gz
           - target: x86_64-apple-darwin
             os: macos-13
-            output_name: zapybase-server-macos-x86_64
+            output_name: surgedb-server-macos-x86_64
             archive: tar.gz
 
     steps:
@@ -42,19 +42,19 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build Binary
-        run: cargo build --release --bin zapybase-server --target ${{ matrix.target }}
+        run: cargo build --release --bin surgedb-server --target ${{ matrix.target }}
 
       - name: Prepare Artifact (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          tar -czvf ../../../${{ matrix.output_name }}.tar.gz zapybase-server
+          tar -czvf ../../../${{ matrix.output_name }}.tar.gz surgedb-server
 
       - name: Prepare Artifact (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../${{ matrix.output_name }}.zip zapybase-server.exe
+          7z a ../../../${{ matrix.output_name }}.zip surgedb-server.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

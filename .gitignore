@@ -5,8 +5,8 @@ target/
 *.log
 
 # Data directories and files
-zapybase_data/
-zapybase_mmap/
+surgedb_data/
+surgedb_mmap/
 *.dat
 *.snap
 *.wal

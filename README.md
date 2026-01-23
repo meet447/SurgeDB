@@ -1,6 +1,6 @@
-# ⚡ ZappyBase
+# ⚡ SurgeDB
 
-[![Rust CI](https://github.com/meetsonawane/zapybase/actions/workflows/rust.yml/badge.svg)](https://github.com/meetsonawane/zapybase/actions/workflows/rust.yml)
+[![Rust CI](https://github.com/meetsonawane/surgedb/actions/workflows/rust.yml/badge.svg)](https://github.com/meetsonawane/surgedb/actions/workflows/rust.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
@@ -9,11 +9,11 @@
 
 ---
 
-## 💡 Why ZappyBase?
+## 💡 Why SurgeDB?
 
-Most vector databases are designed for massive cloud clusters. ZappyBase is designed for **efficiency**.
+Most vector databases are designed for massive cloud clusters. SurgeDB is designed for **efficiency**.
 
-*   **Ultra-Low Footprint**: While production databases like **Qdrant** or **Milvus** often require 500MB+ just to idle, ZappyBase can index **100k vectors using only ~39MB of RAM** (with SQ8).
+*   **Ultra-Low Footprint**: While production databases like **Qdrant** or **Milvus** often require 500MB+ just to idle, SurgeDB can index **100k vectors using only ~39MB of RAM** (with SQ8).
 *   **Edge Ready**: Optimized specifically for Apple Silicon (NEON) and modern x86_64 (AVX-512).
 *   **Zero Dependencies**: Written in pure Rust. No Python runtime, no Docker containers required.
 
@@ -26,11 +26,11 @@ We validate every build for **Recall** (accuracy) and **Latency** across differe
 ### **Heavy Workload (768 dim - SigLIP)**
 *Comparison vs Qdrant on 5,000 points with heavy metadata.*
 
-| Operation | Qdrant (Local) | ZappyBase (Local) | Comparison |
+| Operation | Qdrant (Local) | SurgeDB (Local) | Comparison |
 | :--- | :--- | :--- | :--- |
-| **Create Collection** | 64.58 ms | **2.08 ms** | **ZappyBase ~31x faster** |
-| **Search Avg** | 3.52 ms | **1.94 ms** | **ZappyBase ~1.8x faster** |
-| **Retrieve by ID** | 7.03 ms | **0.68 ms** | **ZappyBase ~10x faster** |
+| **Create Collection** | 64.58 ms | **2.08 ms** | **SurgeDB ~31x faster** |
+| **Search Avg** | 3.52 ms | **1.94 ms** | **SurgeDB ~1.8x faster** |
+| **Retrieve by ID** | 7.03 ms | **0.68 ms** | **SurgeDB ~10x faster** |
 | **Bulk Upsert (5k)** | **2,384 ms** | 9,456 ms | Qdrant ~4x faster |
 
 ### **HNSW Accuracy & Recall**
@@ -61,7 +61,7 @@ We validate every build for **Recall** (accuracy) and **Latency** across differe
 
 ## 🏗️ Architecture
 
-ZappyBase uses a hybrid storage engine to balance speed and durability.
+SurgeDB uses a hybrid storage engine to balance speed and durability.
 
 ```mermaid
 graph TD
@@ -92,11 +92,11 @@ graph TD
 
 ## 📦 Installation
 
-Add ZappyBase to your `Cargo.toml`:
+Add SurgeDB to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zapybase-core = { git = "https://github.com/meet447/zapybase" }
+surgedb-core = { git = "https://github.com/meet447/surgedb" }
 ```
 
 ---
@@ -104,7 +104,7 @@ zapybase-core = { git = "https://github.com/meet447/zapybase" }
 ## 🛠️ Quick Start (Rust)
 
 ```rust
-use zapybase_core::{PersistentVectorDb, PersistentConfig, DistanceMetric};
+use surgedb_core::{PersistentVectorDb, PersistentConfig, DistanceMetric};
 
 fn main() {
     // 1. Setup Persistent Database
@@ -113,11 +113,11 @@ fn main() {
         distance_metric: DistanceMetric::Cosine,
         ..Default::default()
     };
-    let mut db = PersistentVectorDb::open("./zapybase_data", config).unwrap();
+    let mut db = PersistentVectorDb::open("./surgedb_data", config).unwrap();
 
     // 2. Insert Vector with Metadata
     let vec = vec![0.1; 384];
-    let meta = serde_json::json!({"title": "ZappyBase Guide"});
+    let meta = serde_json::json!({"title": "SurgeDB Guide"});
     db.insert("doc_1", &vec, Some(meta)).unwrap();
 
     // 3. Search
@@ -132,11 +132,11 @@ fn main() {
 
 ## 🌐 HTTP Server
 
-ZappyBase includes a high-performance HTTP server powered by **Axum**.
+SurgeDB includes a high-performance HTTP server powered by **Axum**.
 
 ### Start the Server
 ```bash
-cargo run --release -p zapybase-server
+cargo run --release -p surgedb-server
 # Server listening on 0.0.0.0:3000
 ```
 
@@ -202,7 +202,7 @@ curl -X DELETE http://localhost:3000/collections/docs
 
 ## 🖥️ CLI Usage
 
-ZappyBase comes with a powerful CLI for benchmarking and validation.
+SurgeDB comes with a powerful CLI for benchmarking and validation.
 
 ```bash
 # Run the validation suite (Recall & Latency)

@@ -199,6 +199,173 @@ impl HnswIndex {
         (-r.ln() * self.config.ml).floor() as usize
     }
 
+    /// Insert multiple vectors in a batch
+    pub fn insert_batch(
+        &self,
+        items: &[(InternalId, &[f32])],
+        storage: &(impl VectorStorageTrait + Sync),
+    ) -> Result<()> {
+        use rayon::prelude::*; // Use inside function to avoid trait/impl conflict
+
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        // Generate levels for all new nodes upfront
+        let mut new_nodes_data = Vec::with_capacity(items.len());
+        for (internal_id, _) in items {
+            let level = self.random_level();
+            new_nodes_data.push((*internal_id, level));
+        }
+
+        // Phase 1: Parallel Search for neighbors
+        // We acquire a Read lock on the graph to allow parallel reading
+        let search_results: Vec<_> = {
+            let nodes = self.nodes.read();
+            let entry_point = self.entry_point.read();
+            let max_layer = *self.max_layer.read();
+
+            if let Some(ep) = *entry_point {
+                // Parallel iterator over items
+                items
+                    .par_iter()
+                    .zip(new_nodes_data.par_iter())
+                    .map(|(&(_, vector), &(_, node_level))| {
+                        let mut current_ep = ep;
+                        let mut neighbors_by_layer = vec![Vec::new(); node_level + 1];
+
+                        // Traverse from top layer to node_level + 1
+                        for layer in (node_level + 1..=max_layer).rev() {
+                            if let Ok(next_ep) =
+                                self.search_layer_single(vector, current_ep, layer, &nodes, storage)
+                            {
+                                current_ep = next_ep;
+                            }
+                        }
+
+                        // For layers from min(node_level, max_layer) down to 0
+                        let start_layer = node_level.min(max_layer);
+                        for layer in (0..=start_layer).rev() {
+                            if let Ok(neighbors) = self.search_layer(
+                                vector,
+                                current_ep,
+                                self.config.ef_construction,
+                                layer,
+                                &nodes,
+                                storage,
+                            ) {
+                                // Select best neighbors
+                                let m = if layer == 0 {
+                                    self.config.m0
+                                } else {
+                                    self.config.m
+                                };
+                                let selected = self.select_neighbors(&neighbors, m, storage);
+                                neighbors_by_layer[layer] = selected;
+
+                                if !neighbors_by_layer[layer].is_empty() {
+                                    current_ep = neighbors_by_layer[layer][0].id;
+                                }
+                            }
+                        }
+                        Ok::<_, crate::error::Error>(neighbors_by_layer)
+                    })
+                    .collect()
+            } else {
+                // Index is empty, nothing to search
+                (0..items.len()).map(|_| Ok(Vec::new())).collect()
+            }
+        };
+
+        // Phase 2: Sequential Update (Write Lock)
+        // We now acquire the Write lock to actually modify the graph
+        let mut nodes = self.nodes.write();
+        let mut entry_point = self.entry_point.write();
+        let mut max_layer = self.max_layer.write();
+
+        // Fix type mismatch by destructuring the tuple reference correctly
+        for (i, &(internal_id, level)) in new_nodes_data.iter().enumerate() {
+            let mut new_node = HnswNode::new(internal_id, level);
+
+            // If index was empty initially, the first item becomes entry point
+            if entry_point.is_none() {
+                *entry_point = Some(internal_id);
+                *max_layer = level;
+                nodes.push(new_node);
+                continue;
+            }
+
+            // Assign pre-computed neighbors
+            if let Ok(neighbors_by_layer) = &search_results[i] {
+                for (layer, candidates) in neighbors_by_layer.iter().enumerate() {
+                    if layer < new_node.neighbors.len() {
+                        new_node.neighbors[layer] = candidates.iter().map(|c: &Candidate| c.id).collect();
+                    }
+                }
+            }
+
+            nodes.push(new_node);
+
+            // Update bidirectional connections
+            if let Ok(neighbors_by_layer) = &search_results[i] {
+                 for (layer, candidates) in neighbors_by_layer.iter().enumerate() {
+                    for neighbor in candidates {
+                        let neighbor_idx = neighbor.id.as_usize();
+                        
+                        if neighbor_idx < nodes.len() {
+                             let neighbor_node = &mut nodes[neighbor_idx];
+                             if neighbor_node.max_layer >= layer {
+                                 neighbor_node.neighbors[layer].push(internal_id);
+                                 
+                                 // Prune connections if needed
+                                 let max_connections = if layer == 0 {
+                                     self.config.m0
+                                 } else {
+                                     self.config.m
+                                 };
+                                 
+                                 if neighbor_node.neighbors[layer].len() > max_connections {
+                                     if let Some(nv) = storage.get_vector_data(neighbor.id) {
+                                         let mut candidates: Vec<Candidate> = neighbor_node.neighbors[layer]
+                                            .iter()
+                                            .filter_map(|&n_id| {
+                                                storage
+                                                    .distance(n_id, &nv, self.distance_metric)
+                                                    .map(|dist| Candidate {
+                                                        id: n_id,
+                                                        distance: dist,
+                                                    })
+                                            })
+                                            .collect();
+                                        candidates.sort_by(|a, b| {
+                                            a.distance
+                                                .partial_cmp(&b.distance)
+                                                .unwrap_or(Ordering::Equal)
+                                        });
+                                        neighbor_node.neighbors[layer] = candidates
+                                            .into_iter()
+                                            .take(max_connections)
+                                            .map(|c| c.id)
+                                            .collect();
+                                     }
+                                 }
+                             }
+                        }
+                    }
+                 }
+            }
+
+            // Update entry point
+            if level > *max_layer {
+                *max_layer = level;
+                *entry_point = Some(internal_id);
+            }
+        }
+
+        Ok(())
+    }
+
+
     /// Insert a new vector into the index
     pub fn insert(
         &self,

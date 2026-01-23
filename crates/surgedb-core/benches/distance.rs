@@ -1,7 +1,7 @@
 //! Benchmarks for distance calculations
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use zapybase_core::distance::{cosine_distance, dot_product_distance, euclidean_distance};
+use surgedb_core::distance::{cosine_distance, dot_product_distance, euclidean_distance};
 
 fn generate_random_vector(dim: usize) -> Vec<f32> {
     (0..dim)

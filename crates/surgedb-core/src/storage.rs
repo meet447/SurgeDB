@@ -91,14 +91,29 @@ impl VectorStorage {
             });
         }
 
-        let mut id_to_internal = self.id_to_internal.write();
-        if !allow_update && id_to_internal.contains_key(&id) {
-            return Err(Error::DuplicateId(id.to_string()));
+        // Acquire lock once for checking existence
+        {
+            let id_to_internal = self.id_to_internal.read();
+            if !allow_update && id_to_internal.contains_key(&id) {
+                return Err(Error::DuplicateId(id.to_string()));
+            }
         }
+
+        // Prepare data outside of lock? No, we need consistent state.
+        // But for batch insert, we can acquire lock once for multiple items.
+        // Here we just implement single insert efficiently.
 
         let mut vectors = self.vectors.write();
         let mut internal_to_id = self.internal_to_id.write();
+        let mut id_to_internal = self.id_to_internal.write();
         let mut metadata_store = self.metadata.write();
+
+        // Double check duplicate under write lock to be safe?
+        // Optimistic check above is fine if we assume single writer or accept race.
+        // But strict correctness requires check under write lock.
+        if !allow_update && id_to_internal.contains_key(&id) {
+            return Err(Error::DuplicateId(id.to_string()));
+        }
 
         let internal_id = InternalId::from(internal_to_id.len());
 
@@ -115,6 +130,54 @@ impl VectorStorage {
         }
 
         Ok(internal_id)
+    }
+
+    /// Batch insert/upsert vectors
+    /// Optimized to acquire locks once for the entire batch
+    pub fn upsert_batch(
+        &self,
+        items: &[(VectorId, Vec<f32>, Option<Value>)],
+    ) -> Result<Vec<InternalId>> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Validate dimensions first
+        for (_, vector, _) in items {
+            if vector.len() != self.dimensions {
+                return Err(Error::DimensionMismatch {
+                    expected: self.dimensions,
+                    got: vector.len(),
+                });
+            }
+        }
+
+        let mut vectors = self.vectors.write();
+        let mut internal_to_id = self.internal_to_id.write();
+        let mut id_to_internal = self.id_to_internal.write();
+        let mut metadata_store = self.metadata.write();
+
+        let start_internal_id = internal_to_id.len();
+        let mut result_ids = Vec::with_capacity(items.len());
+
+        for (i, (id, vector, metadata)) in items.iter().enumerate() {
+            let internal_id = InternalId::from(start_internal_id + i);
+            result_ids.push(internal_id);
+
+            // Append vector
+            vectors.extend_from_slice(vector);
+
+            // Update mappings
+            id_to_internal.insert(id.clone(), internal_id);
+            internal_to_id.push(id.clone());
+
+            // Metadata
+            if let Some(meta) = metadata {
+                metadata_store.insert(internal_id, meta.clone());
+            }
+        }
+
+        Ok(result_ids)
     }
 
     /// Get a vector by its internal ID
