@@ -1,15 +1,14 @@
-# ⚡ SurgeDB
+# SurgeDB
 
-[![Rust CI](https://github.com/meetsonawane/surgedb/actions/workflows/rust.yml/badge.svg)](https://github.com/meetsonawane/surgedb/actions/workflows/rust.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Rust CI](https://github.com/meetsonawane/surgedb/actions/workflows/rust.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
-![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
 **The SIMD-powered, ultra-lightweight vector database for the Edge.**
 
 ---
 
-## 💡 Why SurgeDB?
+## Why SurgeDB?
 
 Most vector databases are designed for massive cloud clusters. SurgeDB is designed for **efficiency**.
 
@@ -19,50 +18,21 @@ Most vector databases are designed for massive cloud clusters. SurgeDB is design
 
 ---
 
-## 🚀 Performance Snapshot
+## Features
 
-We validate every build for **Recall** (accuracy) and **Latency** across different vector sizes.
-
-### **Heavy Workload (768 dim - SigLIP)**
-
-*Comparison vs Qdrant on 5,000 points with heavy metadata.*
-
-| Operation | Qdrant (Local) | SurgeDB (Local) | Comparison |
-| :--- | :--- | :--- | :--- |
-| **Create Collection** | 64.58 ms | **2.08 ms** | **SurgeDB ~31x faster** |
-| **Search Avg** | 3.52 ms | **0.64 ms** | **SurgeDB ~5.5x faster** |
-| **Retrieve by ID** | 7.03 ms | **0.68 ms** | **SurgeDB ~10x faster** |
-| **Bulk Upsert (5k)** | **2,384 ms** | 5,257 ms | Qdrant ~2.2x faster |
-
-### **HNSW Accuracy & Recall**
-
-*Measured on 2k vectors (128 dim) against exact brute-force truth.*
-
-| Metric | Full Precision HNSW | SQ8 Quantized HNSW | Result |
-| :--- | :--- | :--- | :--- |
-| **Top-10 Recall** | **99.20%** | **98.80%** | **Near Perfect** |
-| **Rank Consistency**| **86.00%** | 76.50% | **Very High** |
-
-### **Standard Workload (128 dim)**
-
-| Mode | Recall @ 10 | Latency (Avg) | Compression |
-| :--- | :--- | :--- | :--- |
-| **HNSW (In-Memory)** | **99.2%** | **0.15 ms** | 1x |
-| **SQ8 (Quantized)** | **98.8%** | **0.22 ms** | **3.76x** |
-| **Binary (1-bit)** | 25.7% | 0.02 ms | 32.0x |
-
-### **Scaling Benchmarks (384 dim)**
-
-| Dataset Size | Mode | Latency (Avg) | Throughput | Memory Usage |
-| :--- | :--- | :--- | :--- | :--- |
-| **50,000 Vectors** | **HNSW** | **0.78 ms** | 1,282 QPS | ~87 MB |
-| **100,000 Vectors** | **SQ8 (Indexed)** | **1.04 ms** | 964 QPS | **~96 MB** |
-
-*Performance measured on M2 Mac. HNSW provides sub-millisecond search at scale, while SQ8 offers massive memory savings.*
+* **Adaptive HNSW Indexing**: High-speed approximate nearest neighbor search.
+* **SIMD Optimized**: Hand-tuned kernels for NEON (Apple Silicon) and AVX-512 (x86).
+* **Plug-and-Play Quantization**:
+  * **SQ8**: 4x compression with <1% accuracy loss.
+  * **Binary**: 32x compression for massive datasets.
+* **ACID-Compliant Persistence**: Write-Ahead Log (WAL) and Snapshots for crash-safe data.
+* **Mmap Support**: Disk-resident vectors for datasets larger than RAM.
+* **Collections & Metadata**: Manage multiple collections with rich JSON metadata.
+* **HTTP Server**: Built-in high-performance Axum server for easy deployment.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 SurgeDB uses a hybrid storage engine to balance speed and durability.
 
@@ -79,21 +49,50 @@ graph TD
 
 ---
 
-## ✨ Features
+## Performance Snapshot
 
-* **Adaptive HNSW Indexing**: High-speed approximate nearest neighbor search.
-* **SIMD Optimized**: Hand-tuned kernels for NEON (Apple Silicon) and AVX-512 (x86).
-* **Plug-and-Play Quantization**:
-  * **SQ8**: 4x compression with <1% accuracy loss.
-  * **Binary**: 32x compression for massive datasets.
-* **ACID-Compliant Persistence**: Write-Ahead Log (WAL) and Snapshots for crash-safe data.
-* **Mmap Support**: Disk-resident vectors for datasets larger than RAM.
-* **Collections & Metadata**: Manage multiple collections with rich JSON metadata.
-* **HTTP Server**: Built-in high-performance Axum server for easy deployment.
+We validate every build for **Recall** (accuracy) and **Latency** across different vector sizes.
+
+### Heavy Workload (768 dim - SigLIP)
+
+*Comparison vs Qdrant on 5,000 points with heavy metadata.*
+
+| Operation | Qdrant (Local) | SurgeDB (Local) | Comparison |
+| :--- | :--- | :--- | :--- |
+| **Create Collection** | 64.58 ms | **2.08 ms** | **SurgeDB ~31x faster** |
+| **Search Avg** | 3.52 ms | **0.64 ms** | **SurgeDB ~5.5x faster** |
+| **Retrieve by ID** | 7.03 ms | **0.68 ms** | **SurgeDB ~10x faster** |
+| **Bulk Upsert (5k)** | **2,384 ms** | 5,257 ms | Qdrant ~2.2x faster |
+
+### HNSW Accuracy & Recall
+
+*Measured on 2k vectors (128 dim) against exact brute-force truth.*
+
+| Metric | Full Precision HNSW | SQ8 Quantized HNSW | Result |
+| :--- | :--- | :--- | :--- |
+| **Top-10 Recall** | **99.20%** | **98.80%** | **Near Perfect** |
+| **Rank Consistency**| **86.00%** | 76.50% | **Very High** |
+
+### Standard Workload (128 dim)
+
+| Mode | Recall @ 10 | Latency (Avg) | Compression |
+| :--- | :--- | :--- | :--- |
+| **HNSW (In-Memory)** | **99.2%** | **0.15 ms** | 1x |
+| **SQ8 (Quantized)** | **98.8%** | **0.22 ms** | **3.76x** |
+| **Binary (1-bit)** | 25.7% | 0.02 ms | 32.0x |
+
+### Scaling Benchmarks (384 dim)
+
+| Dataset Size | Mode | Latency (Avg) | Throughput | Memory Usage |
+| :--- | :--- | :--- | :--- | :--- |
+| **50,000 Vectors** | **HNSW** | **0.78 ms** | 1,282 QPS | ~87 MB |
+| **100,000 Vectors** | **SQ8 (Indexed)** | **1.04 ms** | 964 QPS | **~96 MB** |
+
+*Performance measured on M2 Mac. HNSW provides sub-millisecond search at scale, while SQ8 offers massive memory savings.*
 
 ---
 
-## 📦 Installation
+## Installation
 
 Add SurgeDB to your `Cargo.toml`:
 
@@ -104,7 +103,7 @@ surgedb-core = { git = "https://github.com/meet447/surgedb" }
 
 ---
 
-## 🛠️ Quick Start (Rust)
+## Quick Start (Rust)
 
 ```rust
 use surgedb_core::{PersistentVectorDb, PersistentConfig, DistanceMetric};
@@ -133,7 +132,7 @@ fn main() {
 
 ---
 
-## 🌐 HTTP Server
+## HTTP Server
 
 SurgeDB includes a high-performance HTTP server powered by **Axum**.
 
@@ -211,7 +210,7 @@ curl -X DELETE http://localhost:3000/collections/docs
 
 ---
 
-## 🖥️ CLI Usage
+## CLI Usage
 
 SurgeDB comes with a powerful CLI for benchmarking and validation.
 
@@ -228,7 +227,7 @@ cargo run --release -- persist
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 * [x] SIMD Distance Kernels (NEON/AVX)
 * [x] HNSW Algorithm
@@ -241,6 +240,6 @@ cargo run --release -- persist
 * [ ] Zero-Config RAG Pipeline (Candle Integration)
 * [ ] Distributed Consensus (Raft)
 
-## 📄 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
