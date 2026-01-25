@@ -197,23 +197,28 @@ impl HnswIndex {
     /// Generate a random level for a new node
     fn random_level(&self) -> usize {
         #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
-        let r = {
-            let val = js_sys::Math::random();
-            // Handle edge case where random() returns 0.0 (causes -inf ln)
-            if val < f64::EPSILON {
-                f64::EPSILON
-            } else {
-                val
-            }
-        };
+        {
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
+                "HNSW: Generating random level",
+            ));
+            let r = {
+                let val = js_sys::Math::random();
+
+                if val < f64::EPSILON {
+                    f64::EPSILON
+                } else {
+                    val
+                }
+            };
+            (-r.ln() * self.config.ml).floor() as usize
+        }
 
         #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
-        let r: f64 = {
+        {
             let mut rng = rand::thread_rng();
-            rng.gen()
-        };
-
-        (-r.ln() * self.config.ml).floor() as usize
+            let r: f64 = rng.gen();
+            (-r.ln() * self.config.ml).floor() as usize
+        }
     }
 
     /// Insert multiple vectors in a batch
@@ -407,11 +412,25 @@ impl HnswIndex {
         vector: &[f32],
         storage: &impl VectorStorageTrait,
     ) -> Result<()> {
+        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("HNSW: insert start"));
+
         let node_level = self.random_level();
+
+        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "HNSW: node_level={} (acquiring write locks)",
+            node_level
+        )));
 
         let mut nodes = self.nodes.write();
         let mut entry_point = self.entry_point.write();
         let mut max_layer = self.max_layer.write();
+
+        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
+            "HNSW: write locks acquired",
+        ));
 
         // Create the new node
         let new_node = HnswNode::new(internal_id, node_level);
