@@ -34,8 +34,8 @@ wasm-bindgen-test = "0.3"
 
 [profile.release]
 # Optimize for small code size
-# opt-level = "s"
-# lto = true
-opt-level = 0
-debug = true
-lto = false
+opt-level = "s"
+lto = true
+# opt-level = 0
+# debug = true
+# lto = false

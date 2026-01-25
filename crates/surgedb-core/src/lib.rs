@@ -184,9 +184,6 @@ impl VectorDb {
         vector: &[f32],
         metadata: Option<Value>,
     ) -> Result<()> {
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("VectorDb: insert start"));
-
         let id = id.into();
 
         if vector.len() != self.config.dimensions {
@@ -196,24 +193,8 @@ impl VectorDb {
             });
         }
 
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
-            "VectorDb: inserting into storage",
-        ));
-
         let internal_id = self.storage.insert(id.clone(), vector, metadata)?;
-
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
-            "VectorDb: storage insert done, inserting into index",
-        ));
-
         self.index.insert(internal_id, vector, &self.storage)?;
-
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(
-            "VectorDb: index insert done",
-        ));
 
         Ok(())
     }
