@@ -195,6 +195,12 @@ curl http://localhost:3000/collections/docs/vectors/vec1
 curl "http://localhost:3000/collections/docs/vectors?offset=0&limit=10"
 ```
 
+**Delete Vector by ID**
+
+```bash
+curl -X DELETE http://localhost:3000/collections/docs/vectors/vec1
+```
+
 **Search**
 
 ```bash

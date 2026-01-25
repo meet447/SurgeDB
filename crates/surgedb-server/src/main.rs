@@ -96,7 +96,7 @@ async fn main() {
         .route("/collections/:name/vectors", post(insert_vector).get(list_vectors))
         .route("/collections/:name/vectors/batch", post(batch_insert_vector))
         .route("/collections/:name/upsert", post(upsert_vector))
-        .route("/collections/:name/vectors/:id", get(get_vector))
+        .route("/collections/:name/vectors/:id", get(get_vector).delete(delete_vector))
         .route("/collections/:name/search", post(search_vector))
         .with_state(state);
 
@@ -279,6 +279,38 @@ async fn get_vector(
             metadata,
         })),
         Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse { error: "Vector not found".to_string() }),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e.to_string() }),
+        )),
+    }
+}
+
+async fn delete_vector(
+    State(state): State<AppState>,
+    Path((name, id)): Path<(String, String)>,
+) -> Result<&'static str, (StatusCode, Json<ErrorResponse>)> {
+    let collection = state.db.get_collection(&name).map_err(|e| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse { error: e.to_string() }),
+        )
+    })?;
+
+    let id_clone = id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        collection.delete(&id_clone)
+    }).await.map_err(|e| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse { error: e.to_string() }),
+    ))?;
+
+    match result {
+        Ok(true) => Ok("Deleted"),
+        Ok(false) => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse { error: "Vector not found".to_string() }),
         )),
