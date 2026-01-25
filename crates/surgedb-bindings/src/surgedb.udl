@@ -1,0 +1,141 @@
+// SurgeDB UniFFI Interface Definition
+// This defines the STABLE public API for all language bindings
+// Internal changes to surgedb-core won't affect this interface
+
+namespace surgedb {
+    // Get library version
+    string version();
+    
+    // Get system info (for debugging)
+    string system_info();
+};
+
+// Error types exposed to bindings
+[Error]
+enum SurgeError {
+    "DimensionMismatch",
+    "VectorNotFound",
+    "DuplicateId",
+    "EmptyIndex",
+    "InvalidConfig",
+    "StorageError",
+    "IoError",
+    "SerializationError",
+};
+
+// Distance metric for similarity search
+enum DistanceMetric {
+    "Cosine",
+    "Euclidean",
+    "DotProduct",
+};
+
+// Quantization type for memory compression
+enum Quantization {
+    "None",
+    "SQ8",
+    "Binary",
+};
+
+// Configuration for creating a database
+dictionary SurgeConfig {
+    u32 dimensions;
+    DistanceMetric distance_metric;
+    Quantization quantization;
+    boolean persistent;
+    string? data_path;
+};
+
+// A single search result
+dictionary SearchResult {
+    string id;
+    f32 score;
+    string? metadata_json;
+};
+
+// A vector entry for batch operations
+dictionary VectorEntry {
+    string id;
+    sequence<f32> vector;
+    string? metadata_json;
+};
+
+// Database statistics
+dictionary DatabaseStats {
+    u64 vector_count;
+    u32 dimensions;
+    u64 memory_usage_bytes;
+    f32 compression_ratio;
+};
+
+// Filter for metadata-based search
+[Enum]
+interface SearchFilter {
+    // Exact match: field == value
+    Exact(string field, string value_json);
+    // One of: field in [values]
+    OneOf(string field, sequence<string> values_json);
+    // Logical AND of multiple filters
+    And(sequence<SearchFilter> filters);
+    // Logical OR of multiple filters
+    Or(sequence<SearchFilter> filters);
+};
+
+// Main database client - the stable public interface
+interface SurgeClient {
+    // Create a new in-memory database
+    [Throws=SurgeError, Name=new_in_memory]
+    constructor(u32 dimensions);
+    
+    // Open a persistent database (creates if not exists)
+    [Throws=SurgeError, Name=open]
+    constructor(string path, SurgeConfig config);
+    
+    // Insert a vector with optional metadata (JSON string)
+    [Throws=SurgeError]
+    void insert(string id, sequence<f32> vector, string? metadata_json);
+    
+    // Insert or update a vector
+    [Throws=SurgeError]
+    void upsert(string id, sequence<f32> vector, string? metadata_json);
+    
+    // Batch insert/upsert multiple vectors
+    [Throws=SurgeError]
+    void upsert_batch(sequence<VectorEntry> entries);
+    
+    // Delete a vector by ID, returns true if found and deleted
+    [Throws=SurgeError]
+    boolean delete(string id);
+    
+    // Get a vector by ID, returns None if not found
+    [Throws=SurgeError]
+    VectorEntry? get(string id);
+    
+    // Search for k nearest neighbors
+    [Throws=SurgeError]
+    sequence<SearchResult> search(sequence<f32> query, u32 k);
+    
+    // Search with metadata filter
+    [Throws=SurgeError]
+    sequence<SearchResult> search_with_filter(sequence<f32> query, u32 k, SearchFilter filter);
+    
+    // List vector IDs with pagination
+    sequence<string> list(u32 offset, u32 limit);
+    
+    // Get number of vectors
+    u64 len();
+    
+    // Check if database is empty
+    boolean is_empty();
+    
+    // Get database statistics
+    DatabaseStats stats();
+    
+    // Force checkpoint (for persistent databases)
+    [Throws=SurgeError]
+    void checkpoint();
+    
+    // Force sync to disk (for persistent databases)
+    [Throws=SurgeError]
+    void sync();
+};

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/surgedb-core", "crates/surgedb-cli", "crates/surgedb-server"]
+members = ["crates/surgedb-core", "crates/surgedb-cli", "crates/surgedb-server", "crates/surgedb-bindings"]
 
 [workspace.package]
 version = "0.1.0"

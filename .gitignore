@@ -17,3 +17,10 @@ surgedb_mmap/
 
 dataset
 Roadmap.md
+
+# Python bindings - generated artifacts
+crates/surgedb-bindings/python/*.dylib
+crates/surgedb-bindings/python/*.so
+crates/surgedb-bindings/python/surgedb.py
+__pycache__/
+*.pyc
