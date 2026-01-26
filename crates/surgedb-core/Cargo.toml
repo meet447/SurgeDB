@@ -24,6 +24,8 @@ libc = { version = "0.2", optional = true }
 [dev-dependencies]
 criterion.workspace = true
 tempfile = "3.10"
+proptest = "1.4"
+loom = "0.7"
 
 [[bench]]
 name = "distance"

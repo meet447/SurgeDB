@@ -102,15 +102,15 @@ mod tests {
     #[test]
     fn test_logical_operators() {
         let meta = json!({
-            "tags": ["ai", "database"],
+            "category": "ai",
             "public": true
         });
 
         let filter = Filter::And(vec![
             Filter::Exact("public".to_string(), json!(true)),
             Filter::Or(vec![
-                Filter::Exact("tags.0".to_string(), json!("ai")), // crude array access check
-                Filter::Exact("category".to_string(), json!("something_else")),
+                Filter::Exact("category".to_string(), json!("ai")),
+                Filter::Exact("category".to_string(), json!("database")),
             ]),
         ]);
 

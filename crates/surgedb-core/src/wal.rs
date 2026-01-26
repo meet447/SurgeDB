@@ -185,7 +185,9 @@ impl Wal {
         self.seq += 1;
         let record = WalRecord::new(self.seq, entry);
 
-        let data = serialize(&record).map_err(|e| Error::Storage(e.to_string()))?;
+        let data = serialize(&record).map_err(|e| Error::Serialization {
+            message: e.to_string(),
+        })?;
         let len = data.len() as u32;
 
         if let Some(ref mut file) = self.file {
@@ -222,16 +224,21 @@ impl Wal {
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
         if &magic != WAL_MAGIC {
-            return Err(Error::Storage("Invalid WAL magic bytes".into()));
+            return Err(Error::WalCorrupted {
+                message: format!(
+                    "Invalid WAL magic bytes: expected {:?}, got {:?}",
+                    WAL_MAGIC, magic
+                ),
+            });
         }
 
         let mut version = [0u8; 1];
         reader.read_exact(&mut version)?;
         if version[0] != WAL_VERSION {
-            return Err(Error::Storage(format!(
-                "Unsupported WAL version: {}",
-                version[0]
-            )));
+            return Err(Error::UnsupportedVersion {
+                version: version[0],
+                supported: "1",
+            });
         }
 
         let mut entries = Vec::new();

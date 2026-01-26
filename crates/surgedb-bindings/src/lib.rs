@@ -55,6 +55,81 @@ pub enum SurgeError {
 
     #[error("Serialization error: {message}")]
     SerializationError { message: String },
+
+    #[error("Collection not found: {name}")]
+    CollectionNotFound { name: String },
+
+    #[error("Duplicate collection: {name}")]
+    DuplicateCollection { name: String },
+
+    #[error("WAL corrupted: {message}")]
+    WalCorrupted { message: String },
+
+    #[error("Snapshot corrupted: {message}")]
+    SnapshotCorrupted { message: String },
+
+    #[error("Index corrupted: {message}")]
+    IndexCorrupted { message: String },
+
+    #[error("Checksum mismatch")]
+    ChecksumMismatch,
+
+    #[error("Unsupported version: {version}")]
+    UnsupportedVersion { version: String },
+
+    #[error("Capacity exceeded: {message}")]
+    CapacityExceeded { message: String },
+
+    #[error("Lock acquisition failed: {message}")]
+    LockFailed { message: String },
+
+    #[error("Operation cancelled")]
+    Cancelled,
+}
+
+impl SurgeError {
+    /// Get the error code for FFI interop
+    pub fn error_code(&self) -> u32 {
+        match self {
+            SurgeError::DimensionMismatch { .. } => 1001,
+            SurgeError::VectorNotFound { .. } => 1002,
+            SurgeError::DuplicateId { .. } => 1003,
+            SurgeError::EmptyIndex => 1004,
+            SurgeError::InvalidConfig { .. } => 1100,
+            SurgeError::StorageError { .. } => 1200,
+            SurgeError::CollectionNotFound { .. } => 1201,
+            SurgeError::DuplicateCollection { .. } => 1202,
+            SurgeError::CapacityExceeded { .. } => 1203,
+            SurgeError::IoError { .. } => 1300,
+            SurgeError::WalCorrupted { .. } => 1301,
+            SurgeError::SnapshotCorrupted { .. } => 1302,
+            SurgeError::ChecksumMismatch => 1303,
+            SurgeError::UnsupportedVersion { .. } => 1304,
+            SurgeError::IndexCorrupted { .. } => 1400,
+            SurgeError::SerializationError { .. } => 1500,
+            SurgeError::LockFailed { .. } => 1600,
+            SurgeError::Cancelled => 1601,
+        }
+    }
+
+    /// Returns true if the error indicates data corruption
+    pub fn is_corruption(&self) -> bool {
+        matches!(
+            self,
+            SurgeError::WalCorrupted { .. }
+                | SurgeError::SnapshotCorrupted { .. }
+                | SurgeError::ChecksumMismatch
+                | SurgeError::IndexCorrupted { .. }
+        )
+    }
+
+    /// Returns true if the operation can be retried
+    pub fn is_recoverable(&self) -> bool {
+        matches!(
+            self,
+            SurgeError::EmptyIndex | SurgeError::LockFailed { .. } | SurgeError::Cancelled
+        )
+    }
 }
 
 // Convert from core errors to binding errors
@@ -71,16 +146,59 @@ impl From<surgedb_core::Error> for SurgeError {
             surgedb_core::Error::DuplicateId(id) => SurgeError::DuplicateId { id },
             surgedb_core::Error::EmptyIndex => SurgeError::EmptyIndex,
             surgedb_core::Error::InvalidConfig(msg) => SurgeError::InvalidConfig { message: msg },
+            surgedb_core::Error::InvalidHnswParam {
+                param,
+                value,
+                reason,
+            } => SurgeError::InvalidConfig {
+                message: format!("{} = {}: {}", param, value, reason),
+            },
             surgedb_core::Error::Storage(msg) => SurgeError::StorageError { message: msg },
+            surgedb_core::Error::CollectionNotFound(name) => {
+                SurgeError::CollectionNotFound { name }
+            }
+            surgedb_core::Error::DuplicateCollection(name) => {
+                SurgeError::DuplicateCollection { name }
+            }
+            surgedb_core::Error::CapacityExceeded { message } => {
+                SurgeError::CapacityExceeded { message }
+            }
             surgedb_core::Error::Io(e) => SurgeError::IoError {
                 message: e.to_string(),
             },
-            surgedb_core::Error::CollectionNotFound(name) => SurgeError::StorageError {
-                message: format!("Collection not found: {}", name),
+            surgedb_core::Error::WalCorrupted { message } => SurgeError::WalCorrupted { message },
+            surgedb_core::Error::SnapshotCorrupted { message } => {
+                SurgeError::SnapshotCorrupted { message }
+            }
+            surgedb_core::Error::ChecksumMismatch { .. } => {
+                // Store in message for FFI (can't expose complex types easily)
+                SurgeError::ChecksumMismatch
+            }
+            surgedb_core::Error::UnsupportedVersion { version, .. } => {
+                SurgeError::UnsupportedVersion {
+                    version: version.to_string(),
+                }
+            }
+            surgedb_core::Error::IndexCorrupted { message } => {
+                SurgeError::IndexCorrupted { message }
+            }
+            surgedb_core::Error::IdMappingCorrupted {
+                internal_id,
+                external_id,
+            } => SurgeError::IndexCorrupted {
+                message: format!(
+                    "ID mapping corrupted: internal={}, external={}",
+                    internal_id, external_id
+                ),
             },
-            surgedb_core::Error::DuplicateCollection(name) => SurgeError::StorageError {
-                message: format!("Duplicate collection: {}", name),
-            },
+            surgedb_core::Error::Serialization { message } => {
+                SurgeError::SerializationError { message }
+            }
+            surgedb_core::Error::Deserialization { message } => {
+                SurgeError::SerializationError { message }
+            }
+            surgedb_core::Error::LockFailed { message } => SurgeError::LockFailed { message },
+            surgedb_core::Error::Cancelled => SurgeError::Cancelled,
         }
     }
 }

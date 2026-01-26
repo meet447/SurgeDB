@@ -21,6 +21,16 @@ enum SurgeError {
     "StorageError",
     "IoError",
     "SerializationError",
+    "CollectionNotFound",
+    "DuplicateCollection",
+    "WalCorrupted",
+    "SnapshotCorrupted",
+    "IndexCorrupted",
+    "ChecksumMismatch",
+    "UnsupportedVersion",
+    "CapacityExceeded",
+    "LockFailed",
+    "Cancelled",
 };
 
 // Distance metric for similarity search

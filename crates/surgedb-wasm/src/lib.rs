@@ -29,24 +29,135 @@ pub fn init_panic_hook() {
 // Error Handling
 // =============================================================================
 
+/// Error codes matching the core error types
+#[wasm_bindgen]
+#[allow(non_snake_case)]
+pub struct SurgeErrorCode;
+
+#[wasm_bindgen]
+#[allow(non_snake_case)]
+impl SurgeErrorCode {
+    #[wasm_bindgen(getter)]
+    pub fn DIMENSION_MISMATCH() -> u32 {
+        1001
+    }
+    #[wasm_bindgen(getter)]
+    pub fn VECTOR_NOT_FOUND() -> u32 {
+        1002
+    }
+    #[wasm_bindgen(getter)]
+    pub fn DUPLICATE_ID() -> u32 {
+        1003
+    }
+    #[wasm_bindgen(getter)]
+    pub fn EMPTY_INDEX() -> u32 {
+        1004
+    }
+    #[wasm_bindgen(getter)]
+    pub fn INVALID_CONFIG() -> u32 {
+        1100
+    }
+    #[wasm_bindgen(getter)]
+    pub fn STORAGE_ERROR() -> u32 {
+        1200
+    }
+    #[wasm_bindgen(getter)]
+    pub fn IO_ERROR() -> u32 {
+        1300
+    }
+    #[wasm_bindgen(getter)]
+    pub fn SERIALIZATION_ERROR() -> u32 {
+        1500
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SurgeErrorInfo {
+    code: u32,
+    name: String,
+    message: String,
+    recoverable: bool,
+    corruption: bool,
+}
+
 #[derive(Debug)]
-pub struct SurgeError(String);
+pub struct SurgeError {
+    code: u32,
+    name: String,
+    message: String,
+    recoverable: bool,
+    corruption: bool,
+}
+
+impl SurgeError {
+    fn new(code: u32, name: &str, message: String, recoverable: bool, corruption: bool) -> Self {
+        Self {
+            code,
+            name: name.to_string(),
+            message,
+            recoverable,
+            corruption,
+        }
+    }
+}
 
 impl From<surgedb_core::Error> for SurgeError {
     fn from(err: surgedb_core::Error) -> Self {
-        SurgeError(err.to_string())
+        let code = err.error_code();
+        let recoverable = err.is_recoverable();
+        let corruption = err.is_corruption();
+        let message = err.to_string();
+
+        let name = match &err {
+            surgedb_core::Error::DimensionMismatch { .. } => "DimensionMismatch",
+            surgedb_core::Error::VectorNotFound(_) => "VectorNotFound",
+            surgedb_core::Error::DuplicateId(_) => "DuplicateId",
+            surgedb_core::Error::EmptyIndex => "EmptyIndex",
+            surgedb_core::Error::InvalidConfig(_) => "InvalidConfig",
+            surgedb_core::Error::InvalidHnswParam { .. } => "InvalidHnswParam",
+            surgedb_core::Error::Storage(_) => "StorageError",
+            surgedb_core::Error::CollectionNotFound(_) => "CollectionNotFound",
+            surgedb_core::Error::DuplicateCollection(_) => "DuplicateCollection",
+            surgedb_core::Error::CapacityExceeded { .. } => "CapacityExceeded",
+            surgedb_core::Error::Io(_) => "IoError",
+            surgedb_core::Error::WalCorrupted { .. } => "WalCorrupted",
+            surgedb_core::Error::SnapshotCorrupted { .. } => "SnapshotCorrupted",
+            surgedb_core::Error::ChecksumMismatch { .. } => "ChecksumMismatch",
+            surgedb_core::Error::UnsupportedVersion { .. } => "UnsupportedVersion",
+            surgedb_core::Error::IndexCorrupted { .. } => "IndexCorrupted",
+            surgedb_core::Error::IdMappingCorrupted { .. } => "IdMappingCorrupted",
+            surgedb_core::Error::Serialization { .. } => "SerializationError",
+            surgedb_core::Error::Deserialization { .. } => "DeserializationError",
+            surgedb_core::Error::LockFailed { .. } => "LockFailed",
+            surgedb_core::Error::Cancelled => "Cancelled",
+        };
+
+        SurgeError::new(code, name, message, recoverable, corruption)
     }
 }
 
 impl From<SurgeError> for JsValue {
     fn from(err: SurgeError) -> Self {
-        JsValue::from_str(&err.0)
+        // Create a proper JavaScript Error object with additional properties
+        let error_info = SurgeErrorInfo {
+            code: err.code,
+            name: err.name.clone(),
+            message: err.message.clone(),
+            recoverable: err.recoverable,
+            corruption: err.corruption,
+        };
+
+        // Try to create a structured error, fall back to string
+        match serde_wasm_bindgen::to_value(&error_info) {
+            Ok(obj) => obj,
+            Err(_) => JsValue::from_str(&err.message),
+        }
     }
 }
 
 impl From<serde_json::Error> for SurgeError {
     fn from(err: serde_json::Error) -> Self {
-        SurgeError(err.to_string())
+        SurgeError::new(1500, "SerializationError", err.to_string(), false, false)
     }
 }
 

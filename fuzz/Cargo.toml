@@ -1,0 +1,39 @@
+[package]
+name = "surgedb-fuzz"
+version = "0.0.0"
+authors = ["Meet Sonawane"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+surgedb-core = { path = "../crates/surgedb-core", default-features = false, features = ["simd"] }
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_insert"
+path = "fuzz_targets/fuzz_insert.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_search"
+path = "fuzz_targets/fuzz_search.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_hnsw"
+path = "fuzz_targets/fuzz_hnsw.rs"
+test = false
+doc = false
+bench = false

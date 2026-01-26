@@ -1,0 +1,91 @@
+name: Release npm (WASM)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to npm (true/false)'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # Build and publish WASM package
+  # ============================================================================
+  build-and-publish:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build WASM (web target)
+        run: |
+          cd crates/surgedb-wasm
+          wasm-pack build --target web --release --out-dir pkg-web
+
+      - name: Build WASM (bundler target)
+        run: |
+          cd crates/surgedb-wasm
+          wasm-pack build --target bundler --release --out-dir pkg-bundler
+
+      - name: Build WASM (nodejs target)
+        run: |
+          cd crates/surgedb-wasm
+          wasm-pack build --target nodejs --release --out-dir pkg-node
+
+      - name: Prepare npm package (web)
+        run: |
+          cd crates/surgedb-wasm/pkg-web
+          npm pkg set name="surgedb-wasm"
+          npm pkg set description="High-performance vector database for the browser"
+          npm pkg set repository.type="git"
+          npm pkg set repository.url="https://github.com/meetsonawane/surgedb"
+          npm pkg set license="MIT"
+          npm pkg set keywords='["vector-database","similarity-search","wasm","hnsw","embedding"]'
+
+      - name: Upload web package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-web
+          path: crates/surgedb-wasm/pkg-web/
+
+      - name: Upload bundler package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-bundler
+          path: crates/surgedb-wasm/pkg-bundler/
+
+      - name: Upload node package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-node
+          path: crates/surgedb-wasm/pkg-node/
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true'
+        run: |
+          cd crates/surgedb-wasm/pkg-web
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
