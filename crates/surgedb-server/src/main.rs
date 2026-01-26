@@ -315,11 +315,18 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     let mut sys = System::new_all();
     sys.refresh_all();
     
+    // Get current process memory usage instead of total system memory
+    let pid = sysinfo::get_current_pid().ok();
+    let process_memory = pid
+        .and_then(|p| sys.process(p))
+        .map(|p| p.memory())
+        .unwrap_or(0);
+    
     Json(HealthResponse {
         status: "OK".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_seconds: state.start_time.elapsed().as_secs(),
-        memory_usage_mb: sys.used_memory() / 1024 / 1024,
+        memory_usage_mb: process_memory / 1024 / 1024,
     })
 }
 
