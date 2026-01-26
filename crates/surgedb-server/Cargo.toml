@@ -12,7 +12,12 @@ axum = "0.7"
 tokio = { version = "1.0", features = ["full"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tower-http = { version = "0.5", features = ["cors"] }
+tower = { version = "0.4", features = ["limit", "timeout"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-full", "timeout", "limit"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 parking_lot = { workspace = true }
+dotenvy = "0.15"
+utoipa = { version = "4.2", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+sysinfo = "0.30" # For health stats
