@@ -17,6 +17,7 @@ surgedb_mmap/
 
 dataset
 Roadmap.md
+website 
 
 # Python bindings - generated artifacts
 crates/surgedb-bindings/python/*.dylib
