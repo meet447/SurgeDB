@@ -15,4 +15,7 @@ keywords = ["vector-database", "similarity-search", "hnsw", "embedding"]
 dynamic = ["version"]
 
 [tool.maturin]
-bindings = "uniffi"
+# The name of the crate to build.
+module-name = "surgedb"
+# The path to the Python package.
+python-source = "python"
