@@ -97,12 +97,21 @@ We validate every build for **Recall** (accuracy) and **Latency** across differe
 
 ## Installation
 
+### 🦀 Rust (Core)
+
 Add SurgeDB to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 surgedb-core = { git = "https://github.com/meet447/SurgeDB" }
 ```
+
+### 📚 Clients & Bindings
+
+For detailed installation, usage, and API references, please read the specific package guides:
+
+* **🐍 Python**: [Read the Python Guide & Docs](./crates/surgedb-bindings/README.md)
+* **🌐 JavaScript / WASM**: [Read the WASM Guide & Docs](./crates/surgedb-wasm/README.md)
 
 ---
 

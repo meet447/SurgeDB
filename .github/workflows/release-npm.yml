@@ -57,12 +57,13 @@ jobs:
       - name: Prepare npm package (web)
         run: |
           cd crates/surgedb-wasm/pkg-web
-          npm pkg set name="surgedb-wasm"
+          npm pkg set name="@surgedb/wasm"
           npm pkg set description="High-performance vector database for the browser"
           npm pkg set repository.type="git"
           npm pkg set repository.url="https://github.com/meet447/SurgeDB"
           npm pkg set license="MIT"
           npm pkg set keywords='["vector-database","similarity-search","wasm","hnsw","embedding"]'
+          npm pkg set publishConfig.access="public"
 
       - name: Upload web package
         uses: actions/upload-artifact@v4
