@@ -26,6 +26,5 @@ __pycache__/
 
 # WASM bindings - generated artifacts
 crates/surgedb-wasm/pkg/
-
 website
-roadmap.md
+Roadmap.md
