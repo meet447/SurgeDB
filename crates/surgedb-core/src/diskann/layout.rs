@@ -35,9 +35,8 @@ impl Default for GraphHeader {
 /// Calculate the size of a node record in bytes
 pub fn node_size_bytes(max_degree: u32) -> usize {
     // Neighbor count (4 bytes) + Neighbors (4 * R bytes)
-    let size = 4 + (max_degree as usize * 4);
     // Align to 4 bytes (naturally aligned)
-    size
+    4 + (max_degree as usize * 4)
 }
 
 /// Helper to serialize a node's adjacency list

@@ -657,6 +657,6 @@ mod tests {
         let b: Vec<f32> = (0..384).map(|i| ((i + 1) as f32) / 384.0).collect();
 
         let dist = cosine_distance(&a, &b);
-        assert!(dist >= 0.0 && dist <= 2.0);
+        assert!((0.0..=2.0).contains(&dist));
     }
 }

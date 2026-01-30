@@ -212,7 +212,7 @@ impl SurgeDB {
             ..Default::default()
         };
 
-        let inner = surgedb_core::VectorDb::new(config).map_err(|e| SurgeError::from(e))?;
+        let inner = surgedb_core::VectorDb::new(config).map_err(SurgeError::from)?;
 
         Ok(SurgeDB { inner })
     }
@@ -247,7 +247,7 @@ impl SurgeDB {
 
         self.inner
             .insert(id, &vector, meta)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         Ok(())
     }
@@ -272,7 +272,7 @@ impl SurgeDB {
 
         self.inner
             .upsert(id, &vector, meta)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         Ok(())
     }
@@ -291,7 +291,7 @@ impl SurgeDB {
 
         self.inner
             .upsert_batch(core_items)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         Ok(())
     }
@@ -313,7 +313,7 @@ impl SurgeDB {
     /// @returns { id, vector, metadata } or undefined if not found
     #[wasm_bindgen]
     pub fn get(&self, id: String) -> Result<JsValue, JsValue> {
-        let result = self.inner.get(&id).map_err(|e| SurgeError::from(e))?;
+        let result = self.inner.get(&id).map_err(SurgeError::from)?;
 
         match result {
             Some((vector, metadata)) => {
@@ -338,7 +338,7 @@ impl SurgeDB {
         let results = self
             .inner
             .search(&query, k as usize, None)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         let search_results: Vec<SearchResult> = results
             .into_iter()
@@ -411,8 +411,7 @@ impl SurgeDBQuantized {
             ..Default::default()
         };
 
-        let inner =
-            surgedb_core::QuantizedVectorDb::new(config).map_err(|e| SurgeError::from(e))?;
+        let inner = surgedb_core::QuantizedVectorDb::new(config).map_err(SurgeError::from)?;
 
         Ok(SurgeDBQuantized { inner })
     }
@@ -433,7 +432,7 @@ impl SurgeDBQuantized {
 
         self.inner
             .insert(id, &vector, meta)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         Ok(())
     }
@@ -454,7 +453,7 @@ impl SurgeDBQuantized {
 
         self.inner
             .upsert(id, &vector, meta)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         Ok(())
     }
@@ -471,7 +470,7 @@ impl SurgeDBQuantized {
 
         self.inner
             .upsert_batch(core_items)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         Ok(())
     }
@@ -488,7 +487,7 @@ impl SurgeDBQuantized {
     /// Get a vector by ID
     #[wasm_bindgen]
     pub fn get(&self, id: String) -> Result<JsValue, JsValue> {
-        let result = self.inner.get(&id).map_err(|e| SurgeError::from(e))?;
+        let result = self.inner.get(&id).map_err(SurgeError::from)?;
 
         match result {
             Some((vector, metadata)) => {
@@ -509,7 +508,7 @@ impl SurgeDBQuantized {
         let results = self
             .inner
             .search(&query, k as usize, None)
-            .map_err(|e| SurgeError::from(e))?;
+            .map_err(SurgeError::from)?;
 
         let search_results: Vec<SearchResult> = results
             .into_iter()

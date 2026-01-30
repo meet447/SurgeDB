@@ -1,3 +1,4 @@
+#![allow(clippy::empty_line_after_doc_comments)]
 //! SurgeDB UniFFI Bindings
 //!
 //! This crate provides a stable wrapper API for cross-language bindings.
@@ -349,6 +350,8 @@ impl SearchFilter {
 // Internal Database Wrapper
 // =============================================================================
 
+type BatchItems = Vec<(surgedb_core::VectorId, Vec<f32>, Option<serde_json::Value>)>;
+
 /// Internal enum to hold different database types
 enum DbInner {
     InMemory(surgedb_core::VectorDb),
@@ -472,10 +475,7 @@ impl SurgeClient {
 
     /// Batch insert/upsert multiple vectors
     pub fn upsert_batch(&self, entries: Vec<VectorEntry>) -> Result<(), SurgeError> {
-        let items: Result<
-            Vec<(surgedb_core::VectorId, Vec<f32>, Option<serde_json::Value>)>,
-            SurgeError,
-        > = entries
+        let items: Result<BatchItems, SurgeError> = entries
             .into_iter()
             .map(|e| {
                 let metadata = parse_metadata(&e.metadata_json)?;

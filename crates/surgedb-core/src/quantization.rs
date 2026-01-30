@@ -271,7 +271,7 @@ pub struct BinaryQuantizer {
 impl BinaryQuantizer {
     /// Create a new binary quantizer
     pub fn new(dimensions: usize) -> Self {
-        let byte_size = (dimensions + 7) / 8; // Round up to nearest byte
+        let byte_size = dimensions.div_ceil(8); // Round up to nearest byte
         Self {
             dimensions,
             byte_size,
@@ -435,7 +435,7 @@ mod tests {
         // SQ8: 4 bytes -> 1 byte = 4x compression
         let dims = 384;
         let f32_size = dims * 4;
-        let sq8_size = dims * 1 + 8; // +8 for metadata (min + scale)
+        let sq8_size = dims + 8; // +8 for metadata (min + scale)
 
         let sq8_ratio = f32_size as f32 / sq8_size as f32;
         assert!(sq8_ratio > 3.9, "SQ8 compression ratio: {}", sq8_ratio);

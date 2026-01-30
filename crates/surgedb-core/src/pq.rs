@@ -54,7 +54,7 @@ impl PqCodebook {
         }
 
         let dimensions = vectors[0].len();
-        if dimensions % config.num_subvectors != 0 {
+        if !dimensions.is_multiple_of(config.num_subvectors) {
             return Err(Error::InvalidConfig(format!(
                 "Dimensions ({}) must be divisible by num_subvectors ({})",
                 dimensions, config.num_subvectors

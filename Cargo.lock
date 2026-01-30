@@ -1720,7 +1720,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "surgedb-bindings"
-version = "0.1.0"
+version = "1.0.0-alpha.1"
 dependencies = [
  "parking_lot",
  "serde_json",
@@ -1731,7 +1731,7 @@ dependencies = [
 
 [[package]]
 name = "surgedb-cli"
-version = "0.1.0"
+version = "1.0.0-alpha.1"
 dependencies = [
  "clap",
  "rand 0.8.5",
@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "surgedb-core"
-version = "0.1.0"
+version = "1.0.0-alpha.1"
 dependencies = [
  "bincode",
  "criterion",
@@ -1766,7 +1766,7 @@ dependencies = [
 
 [[package]]
 name = "surgedb-server"
-version = "0.1.0"
+version = "1.0.0-alpha.1"
 dependencies = [
  "axum",
  "dotenvy",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "surgedb-wasm"
-version = "0.1.0"
+version = "1.0.0-alpha.1"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",

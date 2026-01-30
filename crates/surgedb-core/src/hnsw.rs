@@ -159,6 +159,13 @@ impl Ord for MaxCandidate {
     }
 }
 
+struct SearchContext<'a> {
+    query: &'a [f32],
+    ef: usize,
+    layer: usize,
+    filter: Option<&'a Filter>,
+}
+
 /// State of the HNSW index for serialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HnswState {
@@ -267,15 +274,15 @@ impl HnswIndex {
                         // For layers from min(node_level, max_layer) down to 0
                         let start_layer = node_level.min(max_layer);
                         for layer in (0..=start_layer).rev() {
-                            if let Ok(neighbors) = self.search_layer(
-                                vector,
-                                current_ep,
-                                self.config.ef_construction,
+                            let ctx = SearchContext {
+                                query: vector,
+                                ef: self.config.ef_construction,
                                 layer,
-                                &nodes,
-                                storage,
-                                None,
-                            ) {
+                                filter: None,
+                            };
+                            if let Ok(neighbors) =
+                                self.search_layer(ctx, current_ep, &nodes, storage)
+                            {
                                 // Select best neighbors
                                 let m = if layer == 0 {
                                     self.config.m0
@@ -439,15 +446,13 @@ impl HnswIndex {
         // For layers from min(node_level, max_layer) down to 0, find and connect neighbors
         let start_layer = node_level.min(current_max_layer);
         for layer in (0..=start_layer).rev() {
-            let neighbors = self.search_layer(
-                vector,
-                current_ep,
-                self.config.ef_construction,
+            let ctx = SearchContext {
+                query: vector,
+                ef: self.config.ef_construction,
                 layer,
-                &nodes,
-                storage,
-                None,
-            )?;
+                filter: None,
+            };
+            let neighbors = self.search_layer(ctx, current_ep, &nodes, storage)?;
 
             // Select M best neighbors using heuristic
             let m = if layer == 0 {
@@ -560,20 +565,17 @@ impl HnswIndex {
     /// Search for ef nearest neighbors in a layer
     fn search_layer(
         &self,
-        query: &[f32],
+        ctx: SearchContext,
         entry: InternalId,
-        ef: usize,
-        layer: usize,
         nodes: &[HnswNode],
         storage: &impl VectorStorageTrait,
-        filter: Option<&Filter>,
     ) -> Result<Vec<Candidate>> {
         let mut visited = HashSet::new();
         let mut candidates = BinaryHeap::new(); // min-heap
         let mut results = BinaryHeap::new(); // max-heap
 
         let entry_dist = storage
-            .distance(entry, query, self.distance_metric)
+            .distance(entry, ctx.query, self.distance_metric)
             .unwrap_or(f32::MAX);
 
         visited.insert(entry);
@@ -583,7 +585,7 @@ impl HnswIndex {
         });
 
         // Check if entry point matches filter and is not deleted
-        let entry_matches = if let Some(f) = filter {
+        let entry_matches = if let Some(f) = ctx.filter {
             storage
                 .get_metadata(entry)
                 .map(|m| f.matches(&m))
@@ -609,22 +611,22 @@ impl HnswIndex {
             }
 
             let node = &nodes[current.id.as_usize()];
-            if node.max_layer >= layer {
-                for &neighbor_id in &node.neighbors[layer] {
+            if node.max_layer >= ctx.layer {
+                for &neighbor_id in &node.neighbors[ctx.layer] {
                     if visited.insert(neighbor_id) {
                         if let Some(dist) =
-                            storage.distance(neighbor_id, query, self.distance_metric)
+                            storage.distance(neighbor_id, ctx.query, self.distance_metric)
                         {
                             let furthest = results.peek().map(|c| c.distance).unwrap_or(f32::MAX);
 
-                            if dist < furthest || results.len() < ef {
+                            if dist < furthest || results.len() < ctx.ef {
                                 candidates.push(Candidate {
                                     id: neighbor_id,
                                     distance: dist,
                                 });
 
                                 // Check filter and deleted status before adding to results
-                                let matches_filter = if let Some(f) = filter {
+                                let matches_filter = if let Some(f) = ctx.filter {
                                     storage
                                         .get_metadata(neighbor_id)
                                         .map(|m| f.matches(&m))
@@ -641,7 +643,7 @@ impl HnswIndex {
                                         distance: dist,
                                     });
 
-                                    if results.len() > ef {
+                                    if results.len() > ctx.ef {
                                         results.pop();
                                     }
                                 }
@@ -758,7 +760,13 @@ impl HnswIndex {
 
         // Search in layer 0 with ef_search
         let ef = self.config.ef_search.max(k);
-        let candidates = self.search_layer(query, current_ep, ef, 0, &nodes, storage, filter)?;
+        let ctx = SearchContext {
+            query,
+            ef,
+            layer: 0,
+            filter,
+        };
+        let candidates = self.search_layer(ctx, current_ep, &nodes, storage)?;
 
         // Return top k
         Ok(candidates
@@ -844,7 +852,7 @@ mod tests {
         let index = HnswIndex::new(config, DistanceMetric::Cosine);
         let storage = create_test_storage();
 
-        let vectors = vec![
+        let vectors = [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],

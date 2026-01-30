@@ -60,7 +60,7 @@ impl MmapVectorDb {
         };
 
         // Try to load index from disk, otherwise rebuild
-        if let Err(_) = db.load_index() {
+        if db.load_index().is_err() {
             db.rebuild_index()?;
             db.save_index()?;
         }

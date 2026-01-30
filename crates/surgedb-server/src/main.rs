@@ -1,30 +1,27 @@
 use axum::{
-    extract::{State, Json, Path, Query, Request},
-    routing::{get, post, delete},
-    Router,
-    http::{StatusCode, HeaderValue, Method, header::HeaderName},
+    extract::{Json, Path, Query, Request, State},
+    http::{header::HeaderName, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::IntoResponse,
+    routing::{delete, get, post},
+    Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use surgedb_core::{Config as DbConfig, Database, DistanceMetric, QuantizationType};
 use surgedb_core::filter::Filter;
+use surgedb_core::{Config as DbConfig, Database, DistanceMetric, QuantizationType};
+use sysinfo::System;
 use tower_http::{
-    cors::CorsLayer,
-    trace::TraceLayer,
-    compression::CompressionLayer,
-    timeout::TimeoutLayer,
-    limit::RequestBodyLimitLayer,
+    compression::CompressionLayer, cors::CorsLayer, limit::RequestBodyLimitLayer,
+    timeout::TimeoutLayer, trace::TraceLayer,
 };
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
-use utoipa::{OpenApi, ToSchema, IntoParams};
+use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
-use sysinfo::System;
 
 // =============================================================================
 // Configuration
@@ -50,7 +47,8 @@ impl AppConfig {
                 .unwrap_or(3000),
             api_key: std::env::var("API_KEY").ok(),
             log_level: std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
-            cors_allow_origin: std::env::var("CORS_ALLOW_ORIGIN").unwrap_or_else(|_| "*".to_string()),
+            cors_allow_origin: std::env::var("CORS_ALLOW_ORIGIN")
+                .unwrap_or_else(|_| "*".to_string()),
             request_timeout_secs: std::env::var("REQUEST_TIMEOUT_SECS")
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()
@@ -173,7 +171,7 @@ struct VectorResponse {
     ),
     components(
         schemas(
-            CreateCollectionRequest, InsertRequest, BatchInsertRequest, 
+            CreateCollectionRequest, InsertRequest, BatchInsertRequest,
             SearchRequest, SearchResult, ErrorResponse, HealthResponse,
             StatsResponse, VectorResponse
         )
@@ -194,10 +192,7 @@ async fn auth_middleware(
     next: Next,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     if let Some(expected_key) = &state.config.api_key {
-        let auth_header = req
-            .headers()
-            .get("x-api-key")
-            .and_then(|v| v.to_str().ok());
+        let auth_header = req.headers().get("x-api-key").and_then(|v| v.to_str().ok());
 
         if auth_header != Some(expected_key) {
             return Err((
@@ -219,13 +214,10 @@ async fn auth_middleware(
 async fn main() {
     let config = AppConfig::from_env();
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
-    
-    fmt()
-        .with_env_filter(env_filter)
-        .with_target(false)
-        .init();
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+
+    fmt().with_env_filter(env_filter).with_target(false).init();
 
     info!("Starting SurgeDB Server v{}", env!("CARGO_PKG_VERSION"));
 
@@ -240,36 +232,55 @@ async fn main() {
         .allow_origin(config.cors_allow_origin.parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST, Method::DELETE])
         .allow_headers([
-            axum::http::header::CONTENT_TYPE, 
-            HeaderName::from_static("x-api-key")
+            axum::http::header::CONTENT_TYPE,
+            HeaderName::from_static("x-api-key"),
         ]);
 
     let app = Router::new()
         .route("/health", get(health_check))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .nest("/", Router::new()
-            .route("/stats", get(get_stats))
-            .route("/collections", post(create_collection).get(list_collections))
-            .route("/collections/:name", delete(delete_collection))
-            .route("/collections/:name/vectors", post(insert_vector).get(list_vectors))
-            .route("/collections/:name/vectors/batch", post(batch_insert_vector))
-            .route("/collections/:name/upsert", post(upsert_vector))
-            .route("/collections/:name/vectors/:id", get(get_vector).delete(delete_vector))
-            .route("/collections/:name/search", post(search_vector))
-            .layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
+        .nest(
+            "/",
+            Router::new()
+                .route("/stats", get(get_stats))
+                .route(
+                    "/collections",
+                    post(create_collection).get(list_collections),
+                )
+                .route("/collections/:name", delete(delete_collection))
+                .route(
+                    "/collections/:name/vectors",
+                    post(insert_vector).get(list_vectors),
+                )
+                .route(
+                    "/collections/:name/vectors/batch",
+                    post(batch_insert_vector),
+                )
+                .route("/collections/:name/upsert", post(upsert_vector))
+                .route(
+                    "/collections/:name/vectors/:id",
+                    get(get_vector).delete(delete_vector),
+                )
+                .route("/collections/:name/search", post(search_vector))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    auth_middleware,
+                )),
         )
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
-        .layer(TimeoutLayer::new(Duration::from_secs(config.request_timeout_secs)))
+        .layer(TimeoutLayer::new(Duration::from_secs(
+            config.request_timeout_secs,
+        )))
         .layer(RequestBodyLimitLayer::new(config.max_request_size_bytes))
         .layer(cors)
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     info!("Server listening on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    
+
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -314,14 +325,14 @@ async fn shutdown_signal() {
 async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     let mut sys = System::new_all();
     sys.refresh_all();
-    
+
     // Get current process memory usage instead of total system memory
     let pid = sysinfo::get_current_pid().ok();
     let process_memory = pid
         .and_then(|p| sys.process(p))
         .map(|p| p.memory())
         .unwrap_or(0);
-    
+
     Json(HealthResponse {
         status: "OK".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -372,14 +383,16 @@ async fn create_collection(
         Ok(_) => {
             info!("Created collection: {}", payload.name);
             Ok("Created")
-        },
+        }
         Err(e) => {
             warn!("Failed to create collection {}: {}", payload.name, e);
             Err((
                 StatusCode::BAD_REQUEST,
-                Json(ErrorResponse { error: e.to_string() }),
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
             ))
-        },
+        }
     }
 }
 
@@ -415,10 +428,12 @@ async fn delete_collection(
         Ok(_) => {
             info!("Deleted collection: {}", name);
             Ok("Deleted")
-        },
+        }
         Err(e) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -445,22 +460,32 @@ async fn insert_vector(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
     let result = tokio::task::spawn_blocking(move || {
         collection.insert(payload.id, &payload.vector, payload.metadata)
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
 
     match result {
         Ok(_) => Ok("Inserted"),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -486,22 +511,32 @@ async fn upsert_vector(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
     let result = tokio::task::spawn_blocking(move || {
         collection.upsert(payload.id, &payload.vector, payload.metadata)
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
 
     match result {
         Ok(_) => Ok("Upserted"),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -527,7 +562,9 @@ async fn batch_insert_vector(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
@@ -538,19 +575,27 @@ async fn batch_insert_vector(
             .into_iter()
             .map(|item| (item.id, item.vector, item.metadata))
             .collect();
-        
+
         collection.upsert_batch(items)?;
         Ok::<(), surgedb_core::Error>(())
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
 
     match result {
         Ok(_) => Ok(Json(count)),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -575,17 +620,23 @@ async fn get_vector(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
     let id_clone = id.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        collection.get(&id_clone)
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    let result = tokio::task::spawn_blocking(move || collection.get(&id_clone))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )
+        })?;
 
     match result {
         Ok(Some((vector, metadata))) => Ok(Json(VectorResponse {
@@ -595,11 +646,15 @@ async fn get_vector(
         })),
         Ok(None) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: "Vector not found".to_string() }),
+            Json(ErrorResponse {
+                error: "Vector not found".to_string(),
+            }),
         )),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -624,27 +679,37 @@ async fn delete_vector(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
     let id_clone = id.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        collection.delete(&id_clone)
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    let result = tokio::task::spawn_blocking(move || collection.delete(&id_clone))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )
+        })?;
 
     match result {
         Ok(true) => Ok("Deleted"),
         Ok(false) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: "Vector not found".to_string() }),
+            Json(ErrorResponse {
+                error: "Vector not found".to_string(),
+            }),
         )),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -669,19 +734,25 @@ async fn list_vectors(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
     let offset = params.offset.unwrap_or(0);
     let limit = params.limit.unwrap_or(10).min(100);
 
-    let result = tokio::task::spawn_blocking(move || {
-        collection.list(offset, limit)
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    let result = tokio::task::spawn_blocking(move || collection.list(offset, limit))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )
+        })?;
 
     Ok(Json(result.into_iter().map(|id| id.to_string()).collect()))
 }
@@ -707,16 +778,24 @@ async fn search_vector(
     let collection = state.db.get_collection(&name).map_err(|e| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )
     })?;
 
     let result = tokio::task::spawn_blocking(move || {
         collection.search(&payload.vector, payload.k, payload.filter.as_ref())
-    }).await.map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ErrorResponse { error: e.to_string() }),
-    ))?;
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
 
     match result {
         Ok(results) => {
@@ -732,7 +811,9 @@ async fn search_vector(
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }

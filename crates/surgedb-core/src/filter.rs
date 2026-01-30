@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Filter {
@@ -61,22 +62,28 @@ impl Filter {
                 if let Some(value) = get_value_by_path(metadata, field) {
                     if let Some(num) = value.as_f64() {
                         if let Some(limit) = gt {
-                            if !(num > *limit) {
+                            if num.partial_cmp(limit) != Some(Ordering::Greater) {
                                 return false;
                             }
                         }
                         if let Some(limit) = gte {
-                            if !(num >= *limit) {
+                            if !matches!(
+                                num.partial_cmp(limit),
+                                Some(Ordering::Greater | Ordering::Equal)
+                            ) {
                                 return false;
                             }
                         }
                         if let Some(limit) = lt {
-                            if !(num < *limit) {
+                            if num.partial_cmp(limit) != Some(Ordering::Less) {
                                 return false;
                             }
                         }
                         if let Some(limit) = lte {
-                            if !(num <= *limit) {
+                            if !matches!(
+                                num.partial_cmp(limit),
+                                Some(Ordering::Less | Ordering::Equal)
+                            ) {
                                 return false;
                             }
                         }

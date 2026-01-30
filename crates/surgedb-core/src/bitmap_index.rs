@@ -54,9 +54,9 @@ impl BitmapIndex {
 
                     self.index
                         .entry(prefix.to_string())
-                        .or_insert_with(HashMap::new)
+                        .or_default()
                         .entry(val_str)
-                        .or_insert_with(RoaringBitmap::new)
+                        .or_default()
                         .insert(id);
                 }
             }
