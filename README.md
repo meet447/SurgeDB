@@ -56,16 +56,15 @@ graph TD
 
 We validate every build for **Recall** (accuracy) and **Latency** across different vector sizes.
 
-### Heavy Workload (768 dim - SigLIP)
+### Heavy Workload (768 dim)
 
-*Comparison vs Qdrant on 5,000 points with heavy metadata.*
+*SurgeDB local benchmark on 5,000 vectors.*
 
-| Operation | Qdrant (Local) | SurgeDB (Local) | Comparison |
-| :--- | :--- | :--- | :--- |
-| **Create Collection** | 64.58 ms | **2.08 ms** | **SurgeDB ~31x faster** |
-| **Search Avg** | 3.52 ms | **0.64 ms** | **SurgeDB ~5.5x faster** |
-| **Retrieve by ID** | 7.03 ms | **0.68 ms** | **SurgeDB ~10x faster** |
-| **Bulk Upsert (5k)** | **2,384 ms** | 5,257 ms | Qdrant ~2.2x faster |
+| Operation | SurgeDB (Local) |
+| :--- | :--- |
+| **Bulk Upsert (5k)** | **5.69 s** |
+| **Search Avg** | **0.77 ms** |
+| **Search Throughput** | **1,300 QPS** |
 
 ### HNSW Accuracy & Recall
 
@@ -73,25 +72,33 @@ We validate every build for **Recall** (accuracy) and **Latency** across differe
 
 | Metric | Full Precision HNSW | SQ8 Quantized HNSW | Result |
 | :--- | :--- | :--- | :--- |
-| **Top-10 Recall** | **99.20%** | **98.80%** | **Near Perfect** |
-| **Rank Consistency**| **86.00%** | 76.50% | **Very High** |
+| **Top-10 Recall** | **99.20%** | **98.90%** | **Near Perfect** |
 
 ### Standard Workload (128 dim)
 
 | Mode | Recall @ 10 | Latency (Avg) | Compression |
 | :--- | :--- | :--- | :--- |
-| **HNSW (In-Memory)** | **99.2%** | **0.15 ms** | 1x |
-| **SQ8 (Quantized)** | **98.8%** | **0.22 ms** | **3.76x** |
-| **Binary (1-bit)** | 25.7% | 0.02 ms | 32.0x |
+| **HNSW (In-Memory)** | **99.20%** | **0.14 ms** | 1x |
+| **SQ8 (Quantized)** | **98.90%** | **0.20 ms** | **3.76x** |
+| **Binary (1-bit)** | 25.30% | 0.02 ms | 32.0x |
 
 ### Scaling Benchmarks (384 dim)
 
 | Dataset Size | Mode | Latency (Avg) | Throughput | Memory Usage |
 | :--- | :--- | :--- | :--- | :--- |
-| **50,000 Vectors** | **HNSW** | **0.78 ms** | 1,282 QPS | ~87 MB |
-| **100,000 Vectors** | **SQ8 (Indexed)** | **1.04 ms** | 964 QPS | **~96 MB** |
+| **50,000 Vectors** | **HNSW** | **0.93 ms** | 1,080 QPS | ~86.80 MB |
+| **100,000 Vectors** | **SQ8 (Indexed)** | **1.29 ms** | 776 QPS | **~95.50 MB** |
 
-*Performance measured on M2 Mac. HNSW provides sub-millisecond search at scale, while SQ8 offers massive memory savings.*
+*Performance measured locally on February 4, 2026. HNSW provides sub-millisecond search at scale, while SQ8 offers significant memory savings.*
+
+Benchmark commands used:
+
+```bash
+cargo run --release -p surgedb-cli -- validate -c 2000 --dimensions 128 -k 10
+cargo run --release -p surgedb-cli -- bench -c 5000 -d 768
+cargo run --release -p surgedb-cli -- bench -c 50000 -d 384
+cargo run --release -p surgedb-cli -- bench -c 100000 -d 384 -q sq8
+```
 
 ---
 
